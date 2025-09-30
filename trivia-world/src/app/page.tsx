@@ -4,12 +4,14 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { socket } from '../lib/socket';
-
+import AuthModal from './components/AuthModal';
+import { supabase } from '@/lib/supabaseClient'; // Already there
 export default function WelcomePage() {
     const router = useRouter();
     const [name, setName] = useState('');
     const [gameCode, setGameCode] = useState('');
-
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [user, setUser] = useState<any>(null);
     useEffect(() => {
         const onGameCreated = (newGameCode: string) => {
             router.push(`/lobby/${newGameCode}`);
@@ -19,34 +21,42 @@ export default function WelcomePage() {
             socket.off('game-created', onGameCreated);
         };
     }, [router]);
+    useEffect(() => {
+        const getUser = async () => {
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+            setUser(user);
+        };
+        getUser();
 
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+        });
+
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
+    }, []);
     // Action 1: Play Solo
     const handlePlaySolo = () => {
-        const playerName = name.trim() === '' ? 'Guest' : name;
+        const playerName = name.trim() === '' ? 'Guest' : name.trim();
         sessionStorage.setItem('playerName', playerName);
         router.push('/solo');
     };
 
     // Action 2: Create Multiplayer Game
     const handleCreateMultiplayerGame = () => {
-        // FIX: Name is now mandatory for multiplayer
-        if (name.trim() === '') {
-            alert('Please enter your name to create a multiplayer game.');
-            return;
-        }
-        const playerName = name;
+        // Name is optional now — default to 'Guest' when empty
+        const playerName = name.trim() === '' ? 'Guest' : name.trim();
         sessionStorage.setItem('playerName', playerName);
         socket.emit('create-game', playerName);
     };
 
     // Action 3: Join Multiplayer Game
     const handleJoinMultiplayerGame = () => {
-        // FIX: Name is now mandatory for multiplayer
-        if (name.trim() === '') {
-            alert('Please enter your name to join a multiplayer game.');
-            return;
-        }
-        const playerName = name;
+        // Name is optional now — default to 'Guest' when empty
+        const playerName = name.trim() === '' ? 'Guest' : name.trim();
         if (gameCode) {
             // Validate game code format: 5 alphanumeric characters (A-Z,0-9)
             const validCode = /^[A-Z0-9]{5}$/;
@@ -80,6 +90,17 @@ export default function WelcomePage() {
 
     return (
         <div className="relative flex min-h-screen w-full flex-col bg-[#101710]">
+            <div className="absolute top-4 right-4">
+                {user ? (
+                    <button onClick={() => router.push('/profile')} className="bg-blue-800 p-2 rounded-md text-white">
+                        Profile
+                    </button>
+                ) : (
+                    <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 p-2 rounded-md text-white">
+                        Login/Signup
+                    </button>
+                )}
+            </div>
             <main className="flex flex-1 flex-col items-center justify-center py-16 px-4">
                 <div className="flex flex-col items-center w-full max-w-2xl text-center">
                     <h1 className="text-white text-5xl md:text-6xl font-bold tracking-tighter">Trivia World</h1>
@@ -106,8 +127,7 @@ export default function WelcomePage() {
                         <button
                             onClick={handleCreateMultiplayerGame}
                             // FIX: Added cursor-pointer and disabled logic for mandatory name
-                            className="w-full flex items-center justify-center rounded-md h-14 px-8 bg-green-800 hover:bg-green-900 text-white text-xl font-bold gap-3 cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
-                            disabled={!name}
+                            className="w-full flex items-center justify-center rounded-md h-14 px-8 bg-green-800 hover:bg-green-900 text-white text-xl font-bold gap-3 cursor-pointer "
                         >
                             <span className="material-symbols-outlined text-2xl">groups</span>
                             <span className="truncate">Create Multiplayer Game</span>
@@ -132,13 +152,14 @@ export default function WelcomePage() {
                             onClick={handleJoinMultiplayerGame}
                             // FIX: Added cursor-pointer and disabled logic for mandatory name
                             className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md h-10 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-bold cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
-                            disabled={!name || !gameCode}
+                            disabled={!gameCode || gameCode.length !== 5}
                         >
                             Join Game
                         </button>
                     </div>
                 </div>
             </main>
+            <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
         </div>
     );
 }
