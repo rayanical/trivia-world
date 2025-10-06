@@ -186,11 +186,11 @@ export default function SoloGamePage() {
                 <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white">
                     <div className="absolute top-4 right-4">
                         {user ? (
-                            <button onClick={() => router.push('/profile')} className="bg-blue-800 p-2 rounded-md">
+                            <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                                 Profile
                             </button>
                         ) : (
-                            <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 p-2 rounded-md">
+                            <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 hover:bg-green-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                                 Login/Signup
                             </button>
                         )}
@@ -257,11 +257,11 @@ export default function SoloGamePage() {
                 <div className="flex h-screen flex-col items-center justify-center bg-[#1A201A] text-white">
                     <div className="absolute top-4 right-4">
                         {user ? (
-                            <button onClick={() => router.push('/profile')} className="bg-blue-800 p-2 rounded-md">
+                            <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                                 Profile
                             </button>
                         ) : (
-                            <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 p-2 rounded-md">
+                            <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 hover:bg-green-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                                 Login/Signup
                             </button>
                         )}
@@ -298,11 +298,11 @@ export default function SoloGamePage() {
             <div className="flex min-h-screen flex-col items-center justify-center bg-[#1A201A] p-4">
                 <div className="absolute top-4 right-4">
                     {user ? (
-                        <button onClick={() => router.push('/profile')} className="bg-blue-800 p-2 rounded-md">
+                        <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                             Profile
                         </button>
                     ) : (
-                        <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 p-2 rounded-md">
+                        <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 hover:bg-green-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                             Login/Signup
                         </button>
                     )}

@@ -19,7 +19,7 @@ interface Game {
     host: string;
     // Game runtime state
     settings?: {
-        category?: number;
+        category?: string;
         difficulty?: string;
         amount?: number;
     };
@@ -30,6 +30,7 @@ interface Game {
     // when the current question is expected to end (ms since epoch)
     questionEndAt?: number | null;
     evaluating?: boolean;
+    currentAllAnswers?: string[];
 }
 
 type Question = {
@@ -134,16 +135,26 @@ io.on('connection', (socket) => {
 
         const players = game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer }));
 
+        const player = game.players.find((p) => p.id === socket.id);
+        const myAnswer = player?.lastAnswer;
+
+        // Don't send question state during evaluation/transition period
+        if (game.evaluating) {
+            socket.emit('state', { players });
+            return;
+        }
+
         if (game.currentQuestionIndex !== undefined && game.questions && game.questions[game.currentQuestionIndex]) {
             const idx = game.currentQuestionIndex;
             const raw = game.questions[idx];
+            const all_answers = game.currentAllAnswers ?? [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5);
             const question = {
                 index: idx,
                 question: raw.question,
                 difficulty: raw.difficulty,
                 correct_answer: raw.correct_answer,
                 incorrect_answers: raw.incorrect_answers,
-                all_answers: [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5),
+                all_answers,
                 timeLimit: 15,
                 endTime: game.questionEndAt ?? Date.now() + 15000,
             };
@@ -152,15 +163,15 @@ io.on('connection', (socket) => {
             if (game.questionEndAt) {
                 remaining = Math.max(0, Math.ceil((game.questionEndAt - Date.now()) / 1000));
             }
-
-            socket.emit('state', { players, question, timeLeft: remaining });
+            socket.emit('state', { players, question, timeLeft: remaining, myAnswer });
+            console.log(`Emitting state for ${socket.id} (question ${question.index} difficulty):`, question.difficulty); // Logs per request
+            socket.emit('state', { players, question, timeLeft: remaining, myAnswer });
         } else {
             socket.emit('state', { players });
         }
     });
-
     // You would add more events here, like "start-game", "submit-answer", etc.
-    socket.on('start-game', async ({ gameCode, settings }: { gameCode: string; settings?: { category?: number; difficulty?: string; amount?: number } }) => {
+    socket.on('start-game', async ({ gameCode, settings }: { gameCode: string; settings?: { category?: string; difficulty?: string; amount?: number } }) => {
         const game = games[gameCode];
         if (!game) return socket.emit('start-error', 'Game not found');
         if (game.host !== socket.id) return socket.emit('start-error', 'Only the host can start the game');
@@ -172,17 +183,38 @@ io.on('connection', (socket) => {
             amount: settings?.amount ?? 10,
         };
 
-        // Fetch questions from OpenTDB
+        // Fetch questions from The Trivia API
         try {
-            const url = new URL('https://opentdb.com/api.php');
-            url.searchParams.set('amount', String(game.settings.amount));
-            url.searchParams.set('type', 'multiple');
-            if (game.settings.category) url.searchParams.set('category', String(game.settings.category));
-            if (game.settings.difficulty) url.searchParams.set('difficulty', String(game.settings.difficulty));
+            let apiUrl = `https://the-trivia-api.com/v2/questions?limit=${game.settings.amount}`;
 
-            const res = await fetch(url.toString());
-            const json = await res.json();
-            game.questions = json.results || [];
+            if (game.settings.category) {
+                apiUrl += `&categories=${game.settings.category}`;
+            }
+
+            if (game.settings.difficulty) {
+                apiUrl += `&difficulties=${game.settings.difficulty}`;
+            }
+
+            const res = await fetch(apiUrl);
+            const data = await res.json();
+            console.log(
+                'Raw API questions (difficulties only):',
+                data.map((q: any) => q.difficulty),
+            ); // Should log array like ['medium', 'easy', ...]
+            console.log('Sample full question:', data[0]); // Inspect first question fully
+            // Format questions to match internal structure
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            game.questions = data.map((q: any) => ({
+                question: q.question.text,
+                difficulty: q.difficulty,
+                correct_answer: q.correctAnswer,
+                incorrect_answers: q.incorrectAnswers,
+            }));
+            console.log(
+                'Mapped game.questions (difficulties only):',
+                game.questions.map((q) => q.difficulty),
+            ); // Should match raw log
+            console.log('Sample mapped question:', game.questions[0]); // Full object
             game.currentQuestionIndex = 0;
             game.active = true;
 
@@ -251,7 +283,7 @@ io.on('connection', (socket) => {
                     correctAnswer: correct,
                     players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
                 });
-
+                delete game.currentAllAnswers;
                 // move to next question after 3s
                 game.currentQuestionIndex = (game.currentQuestionIndex ?? 0) + 1;
                 game.timer = setTimeout(() => {
@@ -299,13 +331,15 @@ io.on('connection', (socket) => {
         }
 
         // Prepare question payload
+        const all_answers = [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5);
+        game.currentAllAnswers = all_answers; // Store for resync consistency
         const question = {
             index: idx,
             question: raw.question,
             difficulty: raw.difficulty,
             correct_answer: raw.correct_answer,
             incorrect_answers: raw.incorrect_answers,
-            all_answers: [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5),
+            all_answers,
             timeLimit: 15,
             endTime: Date.now() + 15000,
         };
@@ -315,7 +349,8 @@ io.on('connection', (socket) => {
             delete p.lastAnswer;
             delete p.lastAnswerTs;
         }
-
+        console.log(`Emitting question ${idx} (difficulty):`, question.difficulty); // Per question
+        console.log('Full question payload:', question); // If verbose needed
         io.to(gameCode).emit('question', question);
 
         // record when this question will end (ms since epoch)
@@ -351,7 +386,7 @@ io.on('connection', (socket) => {
                 correctAnswer: correct,
                 players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
             });
-
+            delete game.currentAllAnswers;
             // Move to next question after short delay (3s)
             game.currentQuestionIndex = (game.currentQuestionIndex ?? 0) + 1;
             // If there are more questions, send next after 3s
@@ -373,6 +408,7 @@ io.on('connection', (socket) => {
 
         // Emit final results
         io.to(gameCode).emit('game-over', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score })) });
+        delete game.currentAllAnswers;
     };
 
     socket.on('disconnect', (reason) => {

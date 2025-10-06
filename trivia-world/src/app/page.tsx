@@ -41,6 +41,10 @@ export default function WelcomePage() {
     // Action 1: Play Solo
     const handlePlaySolo = () => {
         const playerName = name.trim() === '' ? 'Guest' : name.trim();
+        if (playerName.length > 15) {
+            alert('Player name must be 15 characters or less.');
+            return;
+        }
         sessionStorage.setItem('playerName', playerName);
         router.push('/solo');
     };
@@ -49,6 +53,10 @@ export default function WelcomePage() {
     const handleCreateMultiplayerGame = () => {
         // Name is optional now — default to 'Guest' when empty
         const playerName = name.trim() === '' ? 'Guest' : name.trim();
+        if (playerName.length > 15) {
+            alert('Player name must be 15 characters or less.');
+            return;
+        }
         sessionStorage.setItem('playerName', playerName);
         socket.emit('create-game', playerName);
     };
@@ -57,6 +65,10 @@ export default function WelcomePage() {
     const handleJoinMultiplayerGame = () => {
         // Name is optional now — default to 'Guest' when empty
         const playerName = name.trim() === '' ? 'Guest' : name.trim();
+        if (playerName.length > 15) {
+            alert('Player name must be 15 characters or less.');
+            return;
+        }
         if (gameCode) {
             // Validate game code format: 5 alphanumeric characters (A-Z,0-9)
             const validCode = /^[A-Z0-9]{5}$/;
@@ -92,11 +104,11 @@ export default function WelcomePage() {
         <div className="relative flex min-h-screen w-full flex-col bg-[#101710]">
             <div className="absolute top-4 right-4">
                 {user ? (
-                    <button onClick={() => router.push('/profile')} className="bg-blue-800 p-2 rounded-md text-white">
+                    <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                         Profile
                     </button>
                 ) : (
-                    <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 p-2 rounded-md text-white">
+                    <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 hover:bg-green-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                         Login/Signup
                     </button>
                 )}
@@ -110,6 +122,7 @@ export default function WelcomePage() {
                         className="w-full max-w-md h-14 px-6 mb-8 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-primary"
                         placeholder="Enter Your Name"
                         type="text"
+                        maxLength={15}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                     />

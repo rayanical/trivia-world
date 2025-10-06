@@ -303,14 +303,18 @@ export default function ProfilePage() {
                                 }}
                             />
                             <div className="flex gap-2 mt-2">
-                                <button onClick={() => fileInputRef.current?.click()} disabled={uploadingAvatar} className="flex-1 p-2 rounded-md bg-blue-700 hover:bg-blue-600">
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploadingAvatar}
+                                    className="flex-1 p-2 rounded-md bg-blue-700 hover:bg-blue-600 cursor-pointer"
+                                >
                                     {uploadingAvatar ? 'Uploading…' : 'Upload Avatar'}
                                 </button>
                                 <button
                                     onClick={() => {
                                         setAvatarPreview(profile?.avatar_url || null);
                                     }}
-                                    className="p-2 rounded-md bg-gray-700 hover:bg-gray-600"
+                                    className="p-2 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer"
                                 >
                                     Cancel
                                 </button>
