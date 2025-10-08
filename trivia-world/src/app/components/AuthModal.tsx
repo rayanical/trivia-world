@@ -1,4 +1,4 @@
-// app/components/AuthModal.tsx (updated insert to upsert)
+// app/components/AuthModal.tsx
 'use client';
 
 import { useState } from 'react';
@@ -93,6 +93,20 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         }
     };
 
+    // **NEW FUNCTION TO HANDLE GOOGLE SIGN IN**
+    const handleOAuthSignIn = async (provider: 'google') => {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+                redirectTo: `${window.location.origin}/`,
+            },
+        });
+
+        if (error) {
+            setError(error.message);
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -139,6 +153,30 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 <button onClick={() => setIsSignup(!isSignup)} className="mt-4 text-green-400 hover:text-green-300 underline w-full text-center cursor-pointer transition-colors">
                     {isSignup ? 'Switch to Sign In' : 'Switch to Sign Up'}
                 </button>
+
+                {/* **NEW UI FOR GOOGLE SIGN IN** */}
+                <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                        <div className="w-full border-t border-gray-500" />
+                    </div>
+                    <div className="relative flex justify-center">
+                        <span className="px-2 bg-[#0a2f18] text-sm text-gray-400">Or continue with</span>
+                    </div>
+                </div>
+                <div>
+                    <button
+                        onClick={() => handleOAuthSignIn('google')}
+                        className="w-full flex items-center justify-center gap-3 p-3 rounded-lg bg-white text-gray-800 font-bold hover:bg-gray-200 cursor-pointer transition-colors shadow-lg"
+                    >
+                        <svg className="w-6 h-6" viewBox="0 0 24 24">
+                            <path
+                                fill="currentColor"
+                                d="M21.35,11.1H12.18V13.83H18.69C18.36,17.64 15.19,19.27 12.19,19.27C8.36,19.27 5,16.25 5,12.5C5,8.75 8.36,5.73 12.19,5.73C14.03,5.73 15.69,6.31 16.95,7.45L19.05,5.35C17.11,3.45 14.8,2.5 12.19,2.5C6.92,2.5 3,6.58 3,12.5C3,18.42 6.92,22.5 12.19,22.5C17.6,22.5 21.7,18.34 21.7,12.72C21.7,12.08 21.54,11.58 21.35,11.1Z"
+                            />
+                        </svg>
+                        Sign in with Google
+                    </button>
+                </div>
             </div>
         </div>
     );
