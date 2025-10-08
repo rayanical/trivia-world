@@ -95,22 +95,27 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
     // **NEW FUNCTION TO HANDLE GOOGLE SIGN IN**
     const handleOAuthSignIn = async (provider: 'google') => {
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider,
-            options: {
-                redirectTo: `${window.location.origin}/`,
-            },
-        });
-
-        if (error) {
-            setError(error.message);
+        setLoading(true);
+        setError(null);
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider,
+                options: {
+                    redirectTo: `${window.location.origin}/`,
+                },
+            });
+            if (error) throw error;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to sign in with Google');
+        } finally {
+            setLoading(false);
         }
     };
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-50">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-50 p-4">
             <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-8 rounded-xl shadow-2xl border border-green-900/30 w-full max-w-md">
                 <h2 className="text-3xl font-bold text-green-400 mb-6 text-center">{isSignup ? 'Sign Up' : 'Sign In'}</h2>
                 {error && <div className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -166,7 +171,8 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 <div>
                     <button
                         onClick={() => handleOAuthSignIn('google')}
-                        className="w-full flex items-center justify-center gap-3 p-3 rounded-lg bg-white text-gray-800 font-bold hover:bg-gray-200 cursor-pointer transition-colors shadow-lg"
+                        disabled={loading}
+                        className="w-full flex items-center justify-center gap-3 p-3 rounded-lg bg-white text-gray-800 font-bold hover:bg-gray-200 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
                     >
                         <svg className="w-6 h-6" viewBox="0 0 24 24">
                             <path

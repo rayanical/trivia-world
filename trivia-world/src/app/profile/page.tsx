@@ -127,11 +127,28 @@ export default function ProfilePage() {
         setUploadingAvatar(true);
         setError(null);
         try {
-            const options = { maxSizeMB: 2, maxWidthOrHeight: 1024, useWebWorker: true };
-            const compressedFile = await imageCompression(file, options);
+            if (authProfile?.avatar_url) {
+                const oldAvatarPath = authProfile.avatar_url.split('/avatars/').pop();
+                if (oldAvatarPath) {
+                    await supabase.storage.from('avatars').remove([oldAvatarPath]);
+                }
+            }
+
+            let fileToUpload = file;
+
+            // ** Only compress if the file is NOT a GIF **
+            if (file.type !== 'image/gif') {
+                const options = { maxSizeMB: 2, maxWidthOrHeight: 1024, useWebWorker: true };
+                const compressedFile = await imageCompression(file, options);
+                fileToUpload = compressedFile;
+            }
+
             const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '-');
             const path = `${user.id}/${Date.now()}_${cleanFileName}`;
-            const { error: uploadError } = await supabase.storage.from('avatars').upload(path, compressedFile);
+
+            // Use the (potentially uncompressed) fileToUpload
+            const { error: uploadError } = await supabase.storage.from('avatars').upload(path, fileToUpload);
+
             if (uploadError) throw uploadError;
             const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
             const publicUrl = (urlData as { publicUrl?: string } | null)?.publicUrl || '';
@@ -188,8 +205,8 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#101710] text-white p-6">
-            <header className="max-w-5xl mx-auto flex items-center justify-between mb-6">
+        <div className="min-h-screen bg-[#101710] text-white p-4 md:p-6">
+            <header className="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                 <div className="flex items-center gap-3">
                     <button onClick={handleBackHome} className="text-sm px-3 py-1 rounded-md bg-white/6 hover:bg-white/10 cursor-pointer">
                         ← Home
@@ -252,7 +269,11 @@ export default function ProfilePage() {
                                         className="w-full p-2 rounded-md bg-white/6 outline-none focus:ring-2 focus:ring-green-600"
                                     />
                                     <div className="flex gap-2">
-                                        <button onClick={handleUpdateProfile} disabled={saving} className="flex-1 p-2 rounded-md bg-green-800 hover:bg-green-900 disabled:opacity-60">
+                                        <button
+                                            onClick={handleUpdateProfile}
+                                            disabled={saving}
+                                            className="flex-1 p-2 rounded-md bg-green-800 hover:bg-green-900 disabled:opacity-60 cursor-pointer"
+                                        >
                                             {saving ? 'Saving…' : 'Save'}
                                         </button>
                                         <button
@@ -260,7 +281,7 @@ export default function ProfilePage() {
                                                 setIsEditingUsername(false);
                                                 setNewUsername(authProfile?.username || '');
                                             }}
-                                            className="flex-1 p-2 rounded-md bg-gray-700 hover:bg-gray-600"
+                                            className=" cursor-pointer flex-1 p-2 rounded-md bg-gray-700 hover:bg-gray-600"
                                         >
                                             Cancel
                                         </button>
@@ -269,7 +290,7 @@ export default function ProfilePage() {
                             ) : (
                                 <div className="flex items-center justify-between">
                                     <p className="text-lg">{authProfile?.username || '—'}</p>
-                                    <button onClick={() => setIsEditingUsername(true)} className="text-sm text-green-400 hover:underline">
+                                    <button onClick={() => setIsEditingUsername(true)} className="text-sm text-green-400 hover:underline cursor-pointer">
                                         Change
                                     </button>
                                 </div>
@@ -297,7 +318,7 @@ export default function ProfilePage() {
                 <section className="md:col-span-2 bg-white/5 rounded-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-semibold">Statistics</h2>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-3">
                             <button
                                 onClick={() => setActiveTab('general')}
                                 className={`px-3 py-1 rounded-md cursor-pointer ${activeTab === 'general' ? 'bg-green-800' : 'bg-white/6'}`}
@@ -323,15 +344,15 @@ export default function ProfilePage() {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Total Solo Answered</div>
-                                <div className="text-2xl font-bold">{safeStats.solo_questions_answered}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.solo_questions_answered}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Total Multiplayer Answered</div>
-                                <div className="text-2xl font-bold">{safeStats.multiplayer_questions_answered}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_questions_answered}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Games Played</div>
-                                <div className="text-2xl font-bold">{safeStats.multiplayer_games_played}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_games_played}</div>
                             </div>
                         </div>
                     )}
@@ -340,22 +361,22 @@ export default function ProfilePage() {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Questions Answered</div>
-                                <div className="text-2xl font-bold">{safeStats.solo_questions_answered}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.solo_questions_answered}</div>
                                 <div className="text-sm text-gray-400">
                                     Correct: {safeStats.solo_questions_correct} ({percent(safeStats.solo_questions_correct, safeStats.solo_questions_answered)})
                                 </div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Easy Correct</div>
-                                <div className="text-2xl font-bold text-green-400">{safeStats.solo_easy_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold text-green-400">{safeStats.solo_easy_correct}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Medium Correct</div>
-                                <div className="text-2xl font-bold text-yellow-400">{safeStats.solo_medium_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold text-yellow-400">{safeStats.solo_medium_correct}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Hard Correct</div>
-                                <div className="text-2xl font-bold text-red-400">{safeStats.solo_hard_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold text-red-400">{safeStats.solo_hard_correct}</div>
                             </div>
                         </div>
                     )}
@@ -364,27 +385,27 @@ export default function ProfilePage() {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Matches Played</div>
-                                <div className="text-2xl font-bold">{safeStats.multiplayer_games_played}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_games_played}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Matches Won</div>
-                                <div className="text-2xl font-bold">{safeStats.multiplayer_games_won}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_games_won}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Multiplayer Correct</div>
-                                <div className="text-2xl font-bold">{safeStats.multiplayer_questions_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_questions_correct}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Easy Correct</div>
-                                <div className="text-2xl font-bold text-green-400">{safeStats.multiplayer_easy_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold text-green-400">{safeStats.multiplayer_easy_correct}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Medium Correct</div>
-                                <div className="text-2xl font-bold text-yellow-400">{safeStats.multiplayer_medium_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold text-yellow-400">{safeStats.multiplayer_medium_correct}</div>
                             </div>
                             <div className="p-4 rounded-md bg-white/6">
                                 <div className="text-sm text-gray-300">Hard Correct</div>
-                                <div className="text-2xl font-bold text-red-400">{safeStats.multiplayer_hard_correct}</div>
+                                <div className="text-xl sm:text-2xl font-bold text-red-400">{safeStats.multiplayer_hard_correct}</div>
                             </div>
                         </div>
                     )}

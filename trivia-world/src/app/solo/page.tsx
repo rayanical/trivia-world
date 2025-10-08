@@ -2,7 +2,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Spinner from '../components/Spinner';
 import CustomSelect from '../components/CustomSelect';
 import { supabase } from '@/lib/supabaseClient'; // <-- Import Supabase
@@ -69,6 +69,7 @@ export default function SoloGamePage() {
     const [isAnswered, setIsAnswered] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isGameOver, setIsGameOver] = useState(false);
+    const gameContainerRef = useRef<HTMLDivElement>(null);
 
     // --- Data Fetching ---
     useEffect(() => {
@@ -161,6 +162,18 @@ export default function SoloGamePage() {
     };
     const handleEndGame = () => setIsGameOver(true);
 
+    useEffect(() => {
+        if (isAnswered && gameContainerRef.current) {
+            const scrollOptions: ScrollIntoViewOptions = {
+                behavior: 'smooth',
+                block: 'nearest',
+            };
+            setTimeout(() => {
+                gameContainerRef.current?.scrollIntoView(scrollOptions);
+            }, 100);
+        }
+    }, [isAnswered]);
+
     // --- UI Rendering ---
 
     // **Screen 1: Game Setup**
@@ -174,7 +187,7 @@ export default function SoloGamePage() {
         ];
         return (
             <>
-                <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white">
+                <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 sm:p-6 text-white">
                     <div className="absolute top-4 right-4">
                         {profile ? (
                             <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
@@ -194,7 +207,7 @@ export default function SoloGamePage() {
                         ) : (
                             <div className="w-20 h-20 rounded-full bg-green-800 flex items-center justify-center text-3xl font-bold">{playerName?.charAt(0).toUpperCase()}</div>
                         )}
-                        <h1 className="text-4xl font-bold">Hi, {playerName}!</h1>
+                        <h1 className="text-3xl sm:text-4xl font-bold">Hi, {playerName}!</h1>
                     </div>
                     <p className="text-lg mb-6">Setup Your Solo Game</p>
                     <div className="w-full max-w-md space-y-6">
@@ -204,7 +217,7 @@ export default function SoloGamePage() {
                         </div>
                         <div>
                             <label className="block mb-2 font-bold">Difficulty</label>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {['Easy', 'Medium', 'Hard', 'Random'].map((diff) => {
                                     const key = diff === 'Random' ? '' : diff.toLowerCase();
                                     const isSelected = selectedDifficulty === key;
@@ -329,7 +342,7 @@ export default function SoloGamePage() {
                 {isLoading && !currentQuestion ? (
                     <Spinner />
                 ) : (
-                    <div className="w-full max-w-4xl">
+                    <div ref={gameContainerRef} className="w-full max-w-4xl">
                         {/* **FIX:** Re-added the full top bar with Main Menu button */}
                         <div className="mb-4 flex items-center gap-3 text-lg font-semibold">
                             {playerAvatar ? (
@@ -341,7 +354,7 @@ export default function SoloGamePage() {
                             )}
                             <span>{playerName}</span>
                         </div>
-                        <div className="mb-4 flex justify-between items-center text-xl font-bold">
+                        <div className="mb-4 flex flex-wrap justify-between items-center gap-2 text-xl font-bold">
                             <button onClick={() => router.push('/')} className="text-sm bg-gray-700 hover:bg-gray-800 px-4 py-2 rounded-md flex items-center gap-2 cursor-pointer">
                                 <span className="material-symbols-outlined">home</span> Main Menu
                             </button>
@@ -354,7 +367,7 @@ export default function SoloGamePage() {
                         </div>
 
                         {currentQuestion && (
-                            <div className="flex flex-col gap-6 rounded-xl bg-[#253325] p-6 shadow-lg">
+                            <div className="flex flex-col gap-6 rounded-xl bg-[#253325] p-4 sm:p-6 shadow-lg">
                                 <div className="flex justify-between text-gray-400">
                                     <span>Question {currentQuestionIndex + 1}</span>
                                     <span className="capitalize">Category: {formatCategory(currentQuestion.category)}</span>
@@ -369,13 +382,13 @@ export default function SoloGamePage() {
                                         </span>
                                     </span>
                                 </div>
-                                <h2 className="text-center text-3xl font-bold text-white">{currentQuestion.question}</h2>
+                                <h2 className="text-center text-lg sm:text-xl md:text-2xl font-bold text-white">{currentQuestion.question}</h2>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     {currentQuestion.all_answers.map((answer) => (
                                         <button
                                             key={answer}
                                             onClick={() => handleAnswerSelect(answer)}
-                                            className={`flex w-full items-center gap-4 rounded-lg border-2 p-4 text-left transition-all ${getButtonClass(answer)} ${
+                                            className={`flex w-full items-center gap-4 rounded-lg border-2 p-3 sm:p-4 text-left transition-all ${getButtonClass(answer)} ${
                                                 !isAnswered ? 'cursor-pointer' : 'cursor'
                                             }`}
                                             disabled={isAnswered}

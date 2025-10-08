@@ -30,6 +30,7 @@ export default function RootLayout({
     return (
         <html lang="en">
             <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 {/* For Google Icons used in mockups */}
                 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=switch" rel="stylesheet" />
             </head>

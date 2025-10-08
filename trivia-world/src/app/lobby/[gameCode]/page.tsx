@@ -409,9 +409,9 @@ export default function LobbyPage() {
             </div>
             <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
             {!inGame ? (
-                <div className="w-full max-w-7xl flex items-center justify-between gap-8 pl-16 pr-8">
+                <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center justify-center gap-8 p-4">
                     {/* Left spacer for symmetry */}
-                    <div className="w-64 flex-shrink-0" />
+                    <div className="hidden lg:block w-64 flex-shrink-0" />
 
                     {/* Centered setup */}
                     <div className="w-full max-w-md space-y-6 flex-shrink-0">
@@ -516,7 +516,7 @@ export default function LobbyPage() {
                     </div>
 
                     {/* Sleek players panel on the right with equal spacing */}
-                    <div className="w-64 flex-shrink-0">
+                    <div className="w-full max-w-md lg:w-64 flex-shrink-0 order-first lg:order-last">
                         <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] rounded-xl p-5 shadow-2xl border border-green-900/30">
                             <h3 className="text-lg font-bold mb-3 text-center text-green-400">Players</h3>
                             <div className="max-h-96 overflow-y-auto custom-scrollbar">
@@ -551,17 +551,17 @@ export default function LobbyPage() {
                         </div>
                     )}
 
-                    <div className="mb-4 flex justify-between items-center text-xl font-bold">
+                    <div className="mb-4 flex flex-wrap justify-between items-center gap-2 text-xl font-bold">
                         <button onClick={handleLeave} className="text-sm bg-gray-700 hover:bg-gray-800 px-4 py-2 rounded-md cursor-pointer">
                             Leave Game
                         </button>
                         <span>Game Code: {gameCode}</span>
                         <div className="text-sm">Players: {players.length}</div>
                     </div>
-                    <div className="rounded-xl p-6 bg-[#253325] w-full">
+                    <div className="rounded-xl p-4 sm:p-6 bg-[#253325] w-full">
                         <div className="flex justify-between items-center mb-4">
                             <div className="flex flex-col w-full">
-                                <div className="flex flex-wrap gap-4 justify-between text-gray-400 mb-4">
+                                <div className="flex flex-wrap gap-4 justify-between text-gray-400 text-xs sm:text-base mb-4">
                                     <span>Question {currentQuestion?.index != null ? currentQuestion.index + 1 : ''}</span>
                                     <span className="capitalize">Category: {formatCategory(currentQuestion?.category)}</span>
                                     <span className="capitalize">
@@ -579,13 +579,13 @@ export default function LobbyPage() {
                                         </span>
                                     </span>
                                 </div>
-                                <div className="flex justify-between items-start">
-                                    <h3 className="text-xl font-bold max-w-3xl">{currentQuestion?.question}</h3>
+                                <div className="flex justify-between items-start gap-4">
+                                    <h3 className="text-lg sm:text-xl font-bold max-w-3xl">{currentQuestion?.question}</h3>
                                     <div className="text-center ml-4">
                                         {(isRevealPhase || !!currentQuestion?.timeLimit) && (
                                             <>
                                                 <div className="text-sm text-gray-300">{isRevealPhase ? 'Next in' : 'Time Left'} </div>
-                                                <div className="text-3xl font-bold">{timeLeft}s </div>
+                                                <div className="text-2xl sm:text-3xl font-bold">{timeLeft}s </div>
                                             </>
                                         )}
                                     </div>
@@ -611,7 +611,7 @@ export default function LobbyPage() {
                                     <button
                                         key={ans}
                                         onClick={() => handleSubmitAnswer(ans)}
-                                        className={`p-4 rounded-lg text-left transition-all ${buttonClass}`}
+                                        className={`p-3 sm:p-4 rounded-lg text-left transition-all ${buttonClass}`}
                                         disabled={isRevealPhase || (!!currentQuestion?.timeLimit && timeLeft <= 0)}
                                     >
                                         {ans}

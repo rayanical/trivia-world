@@ -106,13 +106,13 @@ export default function WelcomePage() {
                     </button>
                 )}
             </div>
-            <main className="flex flex-1 flex-col items-center justify-center py-16 px-4">
+            <main className="flex flex-1 flex-col items-center justify-center p-4 sm:p-8 md:py-16">
                 <div className="flex flex-col items-center w-full max-w-2xl text-center">
-                    <h1 className="text-white text-5xl md:text-6xl font-bold tracking-tighter">Trivia World</h1>
-                    <p className="text-white/80 text-lg md:text-xl max-w-2xl my-8">The ultimate trivia challenge. Choose your way to play.</p>
+                    <h1 className="text-white text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tighter">Trivia World</h1>
+                    <p className="text-white/80 text-md sm:text-lg max-w-2xl my-8">The ultimate trivia challenge. Choose your way to play.</p>
 
                     {/* --- START: CONDITIONAL UI BLOCK --- */}
-                    <div className="w-full max-w-md h-20 mb-8 flex items-center justify-center">
+                    <div className="w-full max-w-md min-h-[5rem] mb-8 flex items-center justify-center">
                         {loading ? (
                             <p className="text-white/60">Loading...</p>
                         ) : user ? (
@@ -149,8 +149,7 @@ export default function WelcomePage() {
                     <div className="w-full max-w-md flex flex-col gap-4">
                         <button
                             onClick={handlePlaySolo}
-                            // FIX: Added bg-primary and cursor-pointer
-                            className="w-full flex items-center justify-center rounded-md h-14 px-8 bg-green-800 hover:bg-green-900 text-white text-xl font-bold gap-3 cursor-pointer"
+                            className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <span className="material-symbols-outlined text-2xl">person</span>
                             <span className="truncate">Play Solo</span>
@@ -158,8 +157,7 @@ export default function WelcomePage() {
 
                         <button
                             onClick={handleCreateMultiplayerGame}
-                            // FIX: Added cursor-pointer and disabled logic for mandatory name
-                            className="w-full flex items-center justify-center rounded-md h-14 px-8 bg-green-800 hover:bg-green-900 text-white text-xl font-bold gap-3 cursor-pointer "
+                            className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <span className="material-symbols-outlined text-2xl">groups</span>
                             <span className="truncate">Create Multiplayer Game</span>
@@ -182,8 +180,7 @@ export default function WelcomePage() {
                         />
                         <button
                             onClick={handleJoinMultiplayerGame}
-                            // FIX: Added cursor-pointer and disabled logic for mandatory name
-                            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md h-10 px-4 bg-[#16A34A] hover:bg-[#15803D] text-white text-sm font-bold cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md h-10 px-3 text-xs sm:px-4 sm:text-sm bg-[#16A34A] hover:bg-[#15803D] text-white font-bold cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
                             disabled={!gameCode || gameCode.length !== 5}
                         >
                             Join Game
