@@ -4,12 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabaseClient';
-import imageCompression from 'browser-image-compression'; // Add this line
-
-type Profile = {
-    username?: string | null;
-    avatar_url?: string | null;
-};
+import imageCompression from 'browser-image-compression';
+import { useAuth } from '@/context/AuthContext';
 
 type UserStats = {
     solo_questions_answered: number;
@@ -28,63 +24,55 @@ type UserStats = {
 
 export default function ProfilePage() {
     const router = useRouter();
-    const [profile, setProfile] = useState<Profile | null>(null);
+    const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth();
+
     const [stats, setStats] = useState<UserStats | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [fetchingData, setFetchingData] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // form state
     const [newUsername, setNewUsername] = useState('');
-    // removed website editing per request
     const [userEmail, setUserEmail] = useState<string | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
-    // UI
     const [activeTab, setActiveTab] = useState<'general' | 'solo' | 'multiplayer'>('general');
 
     useEffect(() => {
+        if (authLoading) {
+            return;
+        }
+        if (!user) {
+            router.push('/');
+            return;
+        }
+
         const fetchData = async () => {
-            setLoading(true);
+            setFetchingData(true);
             setError(null);
             try {
-                const {
-                    data: { user },
-                } = await supabase.auth.getUser();
-                if (!user) {
-                    router.push('/');
-                    return;
-                }
                 setUserEmail(user.email || null);
-
-                const { data: profileData, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-
-                if (profileError) {
-                    setError((profileError as unknown as { message?: string })?.message || 'Failed to load profile');
-                } else {
-                    setProfile(profileData as Profile);
-                    setNewUsername((profileData as unknown as Profile)?.username || '');
-                    setAvatarPreview((profileData as unknown as Profile)?.avatar_url || null);
-                }
+                setNewUsername(authProfile?.username || '');
+                setAvatarPreview(authProfile?.avatar_url || null);
 
                 const { data: statsData, error: statsError } = await supabase.from('user_stats').select('*').eq('user_id', user.id).single();
 
-                if (statsError && (statsError as unknown as { code?: string }).code !== 'PGRST116') {
-                    setError((statsError as unknown as { message?: string })?.message || 'Failed to load stats');
-                } else {
-                    setStats((statsData as unknown as UserStats) || null);
+                if (statsError && (statsError as { code?: string }).code !== 'PGRST116') {
+                    throw statsError;
                 }
-            } catch (err: unknown) {
-                setError((err as { message?: string })?.message || 'Unknown error');
+
+                setStats((statsData as UserStats) || null);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to load user data.';
+                setError(message);
             } finally {
-                setLoading(false);
+                setFetchingData(false);
             }
         };
 
         fetchData();
-    }, [router]);
+    }, [authLoading, authProfile, router, user]);
 
     const safeStats = useMemo<UserStats>(() => {
         return (
@@ -108,53 +96,60 @@ export default function ProfilePage() {
     const percent = (num: number, denom: number) => (denom === 0 ? '—' : `${Math.round((num / denom) * 100)}%`);
 
     const handleUpdateProfile = async () => {
+        if (!user) return;
         setSaving(true);
         setError(null);
         try {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
-            if (!user) {
-                router.push('/');
-                return;
-            }
-
             const { error: updateError } = await supabase.from('profiles').update({ username: newUsername.trim() }).eq('id', user.id);
-
-            if (updateError) {
-                setError(updateError.message);
-            } else {
-                setProfile((p) => ({ ...(p || {}), username: newUsername.trim() }));
-                // brief success feedback
-                try {
-                    if (window && 'toast' in window) {
-                        // noop — placeholder for any toast library
-                    }
-                } catch {}
-            }
-        } catch (err: unknown) {
-            setError((err as { message?: string })?.message || 'Failed to update profile');
+            if (updateError) throw updateError;
+            await refreshProfile();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to update profile';
+            setError(message);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleAvatarUpload = async (file: File) => {
+        if (!user) return;
+        setUploadingAvatar(true);
+        setError(null);
+        try {
+            const options = { maxSizeMB: 2, maxWidthOrHeight: 1024, useWebWorker: true };
+            const compressedFile = await imageCompression(file, options);
+            const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '-');
+            const path = `${user.id}/${Date.now()}_${cleanFileName}`;
+            const { error: uploadError } = await supabase.storage.from('avatars').upload(path, compressedFile);
+            if (uploadError) throw uploadError;
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+            const publicUrl = (urlData as { publicUrl?: string } | null)?.publicUrl || '';
+            const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+            if (updateError) throw updateError;
+            setAvatarPreview(publicUrl);
+            await refreshProfile();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to upload avatar';
+            setError(message);
+        } finally {
+            setUploadingAvatar(false);
         }
     };
 
     const handlePasswordReset = async () => {
         setError(null);
         try {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
             const email = user?.email || userEmail;
             if (!email) {
                 setError('No email available for the current user.');
                 return;
             }
             const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
-            if (resetError) setError(resetError.message);
-            else alert('Password reset email sent!');
-        } catch (err: unknown) {
-            setError((err as { message?: string })?.message || 'Failed to send reset email');
+            if (resetError) throw resetError;
+            alert('Password reset email sent!');
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to send reset email';
+            setError(message);
         }
     };
 
@@ -165,19 +160,21 @@ export default function ProfilePage() {
 
     const handleBackHome = () => router.push('/');
 
-    if (loading)
+    if (authLoading || fetchingData) {
         return (
             <div className="flex h-screen items-center justify-center bg-[#101710] text-white">
                 <div>Loading profile…</div>
             </div>
         );
+    }
 
-    if (error)
+    if (error) {
         return (
             <div className="flex h-screen items-center justify-center bg-[#101710] text-white">
                 <div className="text-red-400">{error}</div>
             </div>
         );
+    }
 
     return (
         <div className="min-h-screen bg-[#101710] text-white p-6">
@@ -205,8 +202,8 @@ export default function ProfilePage() {
                             {avatarPreview ? (
                                 // eslint-disable-next-line @next/next/no-img-element -- local data URL preview, ok to use native img
                                 <img src={avatarPreview} alt="avatar-preview" className="w-full h-full object-cover" />
-                            ) : profile?.avatar_url ? (
-                                <Image src={profile.avatar_url} alt="avatar" width={112} height={112} className="object-cover" />
+                            ) : authProfile?.avatar_url ? (
+                                <Image src={authProfile.avatar_url} alt="avatar" width={112} height={112} className="object-cover" />
                             ) : (
                                 <Image src="/file.svg" alt="default avatar" width={112} height={112} className="object-cover" />
                             )}
@@ -234,8 +231,8 @@ export default function ProfilePage() {
                             </button>
                             <button
                                 onClick={() => {
-                                    setNewUsername(profile?.username || '');
-                                    setAvatarPreview(profile?.avatar_url || null);
+                                    setNewUsername(authProfile?.username || '');
+                                    setAvatarPreview(authProfile?.avatar_url || null);
                                 }}
                                 className="flex-1 p-2 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer"
                             >
@@ -249,57 +246,13 @@ export default function ProfilePage() {
                                 type="file"
                                 accept="image/jpeg, image/png, image/webp, image/gif"
                                 className="hidden"
-                                onChange={async (e) => {
+                                onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (!file) return;
-
-                                    // The preview can still use the original file for an instant preview
                                     const reader = new FileReader();
                                     reader.onload = () => setAvatarPreview(String(reader.result));
                                     reader.readAsDataURL(file);
-
-                                    setUploadingAvatar(true);
-                                    try {
-                                        // --- 1. SET COMPRESSION OPTIONS ---
-                                        const options = {
-                                            maxSizeMB: 2, // Set the max size to 2MB
-                                            maxWidthOrHeight: 1024, // Resize the image to a max dimension of 1024px
-                                            useWebWorker: true, // Use a web worker to avoid freezing the UI
-                                        };
-
-                                        // --- 2. COMPRESS THE IMAGE ---
-                                        console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
-                                        const compressedFile = await imageCompression(file, options);
-                                        console.log(`Compressed file size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
-
-                                        // --- 3. UPLOAD THE COMPRESSED FILE ---
-                                        const {
-                                            data: { user },
-                                        } = await supabase.auth.getUser();
-                                        if (!user) throw new Error('Not authenticated');
-
-                                        // The filename can remain the same, but we now use the compressedFile blob
-                                        const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '-');
-                                        const path = `${user.id}/${Date.now()}_${cleanFileName}`;
-
-                                        // Use the 'compressedFile' variable here instead of the original 'file'
-                                        const { error: uploadError } = await supabase.storage.from('avatars').upload(path, compressedFile); // <-- Use compressedFile
-
-                                        if (uploadError) throw uploadError;
-
-                                        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-                                        const publicUrl = (urlData && (urlData as { publicUrl?: string }).publicUrl) || '';
-
-                                        const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
-                                        if (updateError) throw updateError;
-
-                                        setProfile((p) => ({ ...(p || {}), avatar_url: publicUrl }));
-                                    } catch (err: unknown) {
-                                        console.error('Error during image processing or upload:', err);
-                                        setError((err as { message?: string })?.message || 'Failed to upload avatar');
-                                    } finally {
-                                        setUploadingAvatar(false);
-                                    }
+                                    void handleAvatarUpload(file);
                                 }}
                             />
                             <div className="flex gap-2 mt-2">
@@ -312,7 +265,7 @@ export default function ProfilePage() {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        setAvatarPreview(profile?.avatar_url || null);
+                                        setAvatarPreview(authProfile?.avatar_url || null);
                                     }}
                                     className="p-2 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer"
                                 >

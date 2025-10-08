@@ -1,12 +1,15 @@
 'use client';
+import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import CustomSelect from '@/app/components/CustomSelect';
 import { socket } from '@/lib/socket';
 import AuthModal from '@/app/components/AuthModal';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
+import type { User } from '@supabase/supabase-js';
 
-type PlayerView = { id?: string; name: string; score?: number; answered?: boolean };
+type PlayerView = { id?: string; name: string; score?: number; answered?: boolean; avatar?: string | null };
 type Question = {
     index?: number;
     question: string;
@@ -24,7 +27,7 @@ export default function LobbyPage() {
     const gameCode = params.gameCode;
     const [players, setPlayers] = useState<PlayerView[]>([]);
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const [user, setUser] = useState<unknown>(null);
+    const { user } = useAuth();
     const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
     const [category, setCategory] = useState<string>('');
     const [difficulty, setDifficulty] = useState<string>('');
@@ -38,7 +41,7 @@ export default function LobbyPage() {
 
     const selectedAnswerRef = useRef<string | null>(null);
     const currentQuestionRef = useRef<Question | null>(null);
-    const userRef = useRef(user);
+    const userRef = useRef<User | null>(null);
 
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [revealedAnswer, setRevealedAnswer] = useState<string | null>(null);
@@ -58,25 +61,6 @@ export default function LobbyPage() {
     useEffect(() => {
         currentQuestionRef.current = currentQuestion;
     }, [currentQuestion]);
-
-    // Auth state management
-    useEffect(() => {
-        const getUser = async () => {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
-            setUser(user);
-        };
-        getUser();
-
-        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-        });
-
-        return () => {
-            authListener.subscription.unsubscribe();
-        };
-    }, []);
 
     // Enforce 15 character limit on player names
     useEffect(() => {
@@ -129,7 +113,7 @@ export default function LobbyPage() {
                 setInGame(true);
                 setCurrentQuestion(payload.question);
                 setTimeLeft(payload.question.endTime ? Math.max(0, Math.ceil((payload.question.endTime - Date.now()) / 1000)) : 0);
-                setSelectedAnswer(payload.myAnswer ?? selectedAnswer); // Preserve local if server state is nullish
+                setSelectedAnswer((prev) => payload.myAnswer ?? prev); // Preserve local if server state is nullish
             }
         };
         const onQuestionEnded = async (payload: { players?: PlayerView[]; correctAnswer?: string }) => {
@@ -153,7 +137,7 @@ export default function LobbyPage() {
             }, 5000) as unknown as number;
 
             console.log('Full question end debug:', {
-                userId: userRef.current ? (userRef.current as any).id : null,
+                userId: userRef.current?.id ?? null,
                 hasSelectedAnswer: !!selectedAnswerRef.current,
                 selectedAnswer: selectedAnswerRef.current,
                 difficulty: currentQuestionRef.current?.difficulty,
@@ -320,7 +304,7 @@ export default function LobbyPage() {
 
     const handleLeave = () => {
         if (gameCode) socket.emit('leave-game', { gameCode });
-        window.location.href = '/';
+        router.push('/');
     };
     return (
         <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white relative">
@@ -401,9 +385,14 @@ export default function LobbyPage() {
                                         className="w-full p-2 rounded-md bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-green-800 cursor-pointer"
                                     />
                                 </div>
-                                <button onClick={handleStart} className="w-full h-14 rounded-md bg-green-800 text-xl font-bold hover:bg-green-900 cursor-pointer">
-                                    Start Game
-                                </button>
+                                <div className="flex gap-4">
+                                    <button onClick={handleLeave} className="flex-1 h-14 rounded-md bg-gray-700 text-xl font-bold hover:bg-gray-800 cursor-pointer">
+                                        Home
+                                    </button>
+                                    <button onClick={handleStart} className="flex-1 h-14 rounded-md bg-green-800 text-xl font-bold hover:bg-green-900 cursor-pointer">
+                                        Start Game
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div className="text-center space-y-4">
@@ -424,9 +413,18 @@ export default function LobbyPage() {
                                     {players.map((p) => (
                                         <li
                                             key={p.name}
-                                            className="bg-white/5 backdrop-blur-sm p-2.5 rounded-lg text-center font-medium text-sm border border-white/10 hover:bg-white/10 transition-colors"
+                                            className="bg-white/5 backdrop-blur-sm p-2.5 rounded-lg font-medium text-sm border border-white/10 flex items-center justify-center gap-3"
                                         >
-                                            {p.name}
+                                            {p.avatar ? (
+                                                <div className="relative w-6 h-6 rounded-full overflow-hidden">
+                                                    <Image src={p.avatar} alt={p.name} fill style={{ objectFit: 'cover' }} />
+                                                </div>
+                                            ) : (
+                                                <div className="w-6 h-6 rounded-full bg-green-800 flex items-center justify-center text-xs font-bold">
+                                                    {(p.name?.charAt(0) ?? '?').toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span>{p.name}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -435,7 +433,13 @@ export default function LobbyPage() {
                     </div>
                 </div>
             ) : (
-                <div className="w-full max-w-4xl">
+                <div className="w-full max-w-4xl relative">
+                    {everyoneAnswered && (
+                        <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-full max-w-md z-30 pointer-events-none">
+                            <div className="rounded-md bg-yellow-600/20 p-2 text-center text-yellow-200 backdrop-blur-sm">All players have answered</div>
+                        </div>
+                    )}
+
                     <div className="mb-4 flex justify-between items-center text-xl font-bold">
                         <button onClick={handleLeave} className="text-sm bg-gray-700 hover:bg-gray-800 px-4 py-2 rounded-md cursor-pointer">
                             Leave Game
@@ -445,18 +449,36 @@ export default function LobbyPage() {
                     </div>
                     <div className="rounded-xl border border-border-color p-6 bg-[#253325] w-full">
                         <div className="flex justify-between items-center mb-4">
-                            <div>
-                                <div className="text-sm text-gray-300">Question</div>
-                                <h3 className="text-xl font-bold">{currentQuestion?.question}</h3>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-sm text-gray-300">Time Left</div>
-                                <div className="text-3xl font-bold">{timeLeft}s</div>
+                            <div className="flex flex-col w-full">
+                                <div className="flex justify-between text-gray-400 mb-4">
+                                    <span>Question {currentQuestion?.index != null ? currentQuestion.index + 1 : ''}</span>
+                                    <span className="capitalize">
+                                        Difficulty:{' '}
+                                        <span
+                                            className={`font-bold ${
+                                                currentQuestion?.difficulty === 'easy'
+                                                    ? 'text-green-600'
+                                                    : currentQuestion?.difficulty === 'medium'
+                                                    ? 'text-yellow-400'
+                                                    : 'text-red-400'
+                                            }`}
+                                        >
+                                            {currentQuestion?.difficulty || '—'}
+                                        </span>
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-start">
+                                    <h3 className="text-xl font-bold max-w-3xl">{currentQuestion?.question}</h3>
+                                    <div className="text-center ml-4">
+                                        <div className="text-sm text-gray-300">Time Left</div>
+                                        <div className="text-3xl font-bold">{timeLeft}s</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {everyoneAnswered && <div className="col-span-full mb-2 rounded-md bg-yellow-600/20 p-2 text-center text-yellow-200">All players have answered</div>}
+                            {/* everyoneAnswered banner moved above the top bar to avoid resizing the question container */}
                             {(currentQuestion?.all_answers || []).map((ans: string) => {
                                 const isSelected = selectedAnswer === ans;
                                 const isRevealed = revealedAnswer !== null;
@@ -487,15 +509,27 @@ export default function LobbyPage() {
                     <div className="mt-6 w-full">
                         <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] rounded-xl p-4 shadow-xl border border-green-900/30">
                             <h3 className="text-lg font-bold mb-3 text-center text-green-400">Player Scores</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {players.map((p) => (
-                                    <div key={p.name} className="bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10">
-                                        <div className="text-center">
-                                            <div className="font-semibold text-sm truncate">{p.name}</div>
-                                            <div className="text-green-400 font-bold text-lg mt-1">{p.score || 0}</div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {[...players]
+                                    .sort((a, b) => (b.score || 0) - (a.score || 0))
+                                    .map((p, index) => (
+                                        <div key={p.name} className="bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 flex items-center gap-3">
+                                            <span className="font-bold text-lg w-6 text-center">{index + 1}</span>
+                                            {p.avatar ? (
+                                                <div className="relative w-10 h-10 rounded-full overflow-hidden">
+                                                    <Image src={p.avatar} alt={p.name} fill style={{ objectFit: 'cover' }} />
+                                                </div>
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-green-800 flex items-center justify-center text-base font-bold">
+                                                    {(p.name?.charAt(0) ?? '?').toUpperCase()}
+                                                </div>
+                                            )}
+                                            <div className="flex-1">
+                                                <span className="font-medium text-sm truncate block">{p.name}</span>
+                                                <span className="text-green-400 font-bold text-xs">{p.score || 0} pts</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
                             </div>
                         </div>
                     </div>

@@ -1,6 +1,8 @@
+/* eslint-disable @next/next/no-page-custom-font */
 import type { Metadata } from 'next';
 import { Space_Grotesk, Noto_Sans } from 'next/font/google';
 import './globals.css';
+import { AuthProvider } from '@/context/AuthContext';
 
 const spaceGrotesk = Space_Grotesk({
     subsets: ['latin'],
@@ -27,9 +29,11 @@ export default function RootLayout({
         <html lang="en">
             <head>
                 {/* For Google Icons used in mockups */}
-                <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+                <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=switch" rel="stylesheet" />
             </head>
-            <body className={`${spaceGrotesk.variable} ${notoSans.variable} font-sans bg-background text-text-primary`}>{children}</body>
+            <body className={`${spaceGrotesk.variable} ${notoSans.variable} font-sans bg-background text-text-primary`}>
+                <AuthProvider>{children}</AuthProvider>
+            </body>
         </html>
     );
 }

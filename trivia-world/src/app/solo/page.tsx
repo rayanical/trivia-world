@@ -3,11 +3,12 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
-import he from 'he';
 import Spinner from '../components/Spinner';
 import CustomSelect from '../components/CustomSelect';
 import { supabase } from '@/lib/supabaseClient'; // <-- Import Supabase
 import AuthModal from '../components/AuthModal';
+import { useAuth } from '@/context/AuthContext';
+import Image from 'next/image';
 // --- Type Definitions ---
 type Category = { id: number; name: string };
 type Question = {
@@ -17,47 +18,39 @@ type Question = {
     incorrect_answers: string[]; // This was missing from your provided code but is needed
     all_answers: string[];
 };
+type TriviaApiQuestion = {
+    question: { text: string };
+    difficulty: 'easy' | 'medium' | 'hard';
+    correctAnswer: string;
+    incorrectAnswers: string[];
+};
 
 // --- Main Component ---
 export default function SoloGamePage() {
     const router = useRouter();
+    const { user, profile } = useAuth();
 
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const [user, setUser] = useState<unknown>(null);
     const [playerName, setPlayerName] = useState<string>('Guest');
+    const [playerAvatar, setPlayerAvatar] = useState<string | null>(null);
 
-    // Add useEffect for auth
-    useEffect(() => {
-        const getUser = async () => {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
-            setUser(user);
-        };
-        getUser();
-
-        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-        });
-
-        return () => {
-            authListener.subscription.unsubscribe();
-        };
-    }, []);
-
-    // Read playerName from sessionStorage (defaults to 'Guest')
+    // Read player name and avatar from profile/sessionStorage
     useEffect(() => {
         try {
             const stored = sessionStorage.getItem('playerName');
-            if (stored && stored.trim() !== '') setPlayerName(stored);
-            else {
+            const fallbackName = stored && stored.trim() !== '' ? stored : 'Guest';
+            const nextName = profile?.username?.trim() ? profile.username : fallbackName;
+            setPlayerName(nextName ?? 'Guest');
+            if (profile?.username?.trim()) {
+                sessionStorage.setItem('playerName', profile.username);
+            } else if (!stored) {
                 sessionStorage.setItem('playerName', 'Guest');
-                setPlayerName('Guest');
             }
         } catch {
-            // sessionStorage might not be available; keep default
+            setPlayerName(profile?.username ?? 'Guest');
         }
-    }, []);
+        setPlayerAvatar(profile?.avatar_url ?? null);
+    }, [profile]);
 
     // **State for game setup**
     const [categories, setCategories] = useState<Category[]>([]);
@@ -106,11 +99,10 @@ export default function SoloGamePage() {
             apiUrl += `&difficulties=${selectedDifficulty}`;
         }
         // --- CHANGE 2: UPDATE HOW YOU PROCESS THE RESPONSE ---
-        const data = await fetch(apiUrl).then((res) => res.json());
+        const data = (await fetch(apiUrl).then((res) => res.json())) as TriviaApiQuestion[];
 
         // The data structure from The Trivia API is slightly different.
-        const formattedQuestions = data.map((q: any) => {
-            // Use 'any' for simplicity here
+        const formattedQuestions = data.map((q) => {
             const allAnswers = [...q.incorrectAnswers, q.correctAnswer];
             // Shuffle the answers
             allAnswers.sort(() => Math.random() - 0.5);
@@ -130,8 +122,8 @@ export default function SoloGamePage() {
 
     // --- Game Flow Handlers ---
     const handleStartGame = () => {
-        if (!selectedCategory || selectedDifficulty === null) {
-            alert('Please select a category and difficulty.');
+        if (selectedDifficulty === null) {
+            alert('Please select a difficulty.');
             return;
         }
         // Reset game state in case user restarts
@@ -162,12 +154,9 @@ export default function SoloGamePage() {
             // Increment count of correct answers
             setScore((prevScore) => prevScore + 1);
         }
-        if (user) {
-            const u = user as Record<string, unknown>;
-            if (typeof u.id === 'string') {
-                const difficulty = questions[currentQuestionIndex].difficulty;
-                await supabase.rpc('update_solo_stats', { p_user_id: String(u.id), p_diff: difficulty, p_correct: isCorrect });
-            }
+        if (user?.id) {
+            const difficulty = questions[currentQuestionIndex].difficulty;
+            await supabase.rpc('update_solo_stats', { p_user_id: String(user.id), p_diff: difficulty, p_correct: isCorrect });
         }
     };
     const handleEndGame = () => setIsGameOver(true);
@@ -176,16 +165,18 @@ export default function SoloGamePage() {
 
     // **Screen 1: Game Setup**
     if (!gameStarted) {
-        const categoryOptions = categories.map((cat) => ({
-            // Format the name for the API URL (e.g., "Arts & Literature" -> "arts_and_literature")
-            value: cat.name.toLowerCase().replace(/ & /g, '_and_').replace(/ /g, '_'),
-            label: cat.name,
-        }));
+        const categoryOptions = [
+            { value: '', label: 'Any Category' },
+            ...categories.map((cat: Category) => ({
+                value: cat.name.toLowerCase().replace(/ & /g, '_and_').replace(/ /g, '_'),
+                label: cat.name,
+            })),
+        ];
         return (
             <>
                 <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white">
                     <div className="absolute top-4 right-4">
-                        {user ? (
+                        {profile ? (
                             <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                                 Profile
                             </button>
@@ -195,7 +186,16 @@ export default function SoloGamePage() {
                             </button>
                         )}
                     </div>
-                    <h1 className="text-4xl font-bold mb-2">Hi, {playerName}!</h1>
+                    <div className="flex flex-col items-center gap-3 mb-4">
+                        {playerAvatar ? (
+                            <div className="relative w-20 h-20 rounded-full overflow-hidden">
+                                <Image src={playerAvatar} alt="Player Avatar" fill style={{ objectFit: 'cover' }} />
+                            </div>
+                        ) : (
+                            <div className="w-20 h-20 rounded-full bg-green-800 flex items-center justify-center text-3xl font-bold">{playerName?.charAt(0).toUpperCase()}</div>
+                        )}
+                        <h1 className="text-4xl font-bold">Hi, {playerName}!</h1>
+                    </div>
                     <p className="text-lg mb-6">Setup Your Solo Game</p>
                     <div className="w-full max-w-md space-y-6">
                         <div>
@@ -256,7 +256,7 @@ export default function SoloGamePage() {
             <>
                 <div className="flex h-screen flex-col items-center justify-center bg-[#1A201A] text-white">
                     <div className="absolute top-4 right-4">
-                        {user ? (
+                        {profile ? (
                             <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                                 Profile
                             </button>
@@ -297,7 +297,7 @@ export default function SoloGamePage() {
         <>
             <div className="flex min-h-screen flex-col items-center justify-center bg-[#1A201A] p-4">
                 <div className="absolute top-4 right-4">
-                    {user ? (
+                    {profile ? (
                         <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                             Profile
                         </button>
@@ -312,7 +312,16 @@ export default function SoloGamePage() {
                 ) : (
                     <div className="w-full max-w-4xl">
                         {/* **FIX:** Re-added the full top bar with Main Menu button */}
-                        <div className="mb-2 text-lg font-semibold">{playerName}</div>
+                        <div className="mb-4 flex items-center gap-3 text-lg font-semibold">
+                            {playerAvatar ? (
+                                <div className="relative w-12 h-12 rounded-full overflow-hidden">
+                                    <Image src={playerAvatar} alt="Player Avatar" fill style={{ objectFit: 'cover' }} />
+                                </div>
+                            ) : (
+                                <div className="w-12 h-12 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">{playerName?.charAt(0).toUpperCase()}</div>
+                            )}
+                            <span>{playerName}</span>
+                        </div>
                         <div className="mb-4 flex justify-between items-center text-xl font-bold">
                             <button onClick={() => router.push('/')} className="text-sm bg-gray-700 hover:bg-gray-800 px-4 py-2 rounded-md flex items-center gap-2 cursor-pointer">
                                 <span className="material-symbols-outlined">home</span> Main Menu

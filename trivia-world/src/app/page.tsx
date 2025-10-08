@@ -1,85 +1,66 @@
 // app/page.tsx
 'use client';
 
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { socket } from '../lib/socket';
 import AuthModal from './components/AuthModal';
-import { supabase } from '@/lib/supabaseClient'; // Already there
+import { useAuth } from '@/context/AuthContext';
+
 export default function WelcomePage() {
     const router = useRouter();
     const [name, setName] = useState('');
     const [gameCode, setGameCode] = useState('');
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const [user, setUser] = useState<any>(null);
-    useEffect(() => {
-        const onGameCreated = (newGameCode: string) => {
-            router.push(`/lobby/${newGameCode}`);
-        };
-        socket.on('game-created', onGameCreated);
-        return () => {
-            socket.off('game-created', onGameCreated);
-        };
-    }, [router]);
-    useEffect(() => {
-        const getUser = async () => {
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
-            setUser(user);
-        };
-        getUser();
+    const { user, profile, loading } = useAuth();
 
-        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-        });
+    const resolvePlayerName = () => {
+        const profileName = profile?.username?.trim();
+        if (profileName) return profileName;
+        const emailPrefix = user?.email?.split('@')[0]?.trim();
+        if (emailPrefix) return emailPrefix;
+        const manualName = name.trim();
+        return manualName || 'Guest';
+    };
 
-        return () => {
-            authListener.subscription.unsubscribe();
-        };
-    }, []);
+    const resolvedAvatar = profile?.avatar_url || null;
+
     // Action 1: Play Solo
     const handlePlaySolo = () => {
-        const playerName = name.trim() === '' ? 'Guest' : name.trim();
-        if (playerName.length > 15) {
-            alert('Player name must be 15 characters or less.');
-            return;
-        }
+        const playerName = resolvePlayerName();
         sessionStorage.setItem('playerName', playerName);
         router.push('/solo');
     };
 
     // Action 2: Create Multiplayer Game
     const handleCreateMultiplayerGame = () => {
-        // Name is optional now — default to 'Guest' when empty
-        const playerName = name.trim() === '' ? 'Guest' : name.trim();
-        if (playerName.length > 15) {
-            alert('Player name must be 15 characters or less.');
-            return;
-        }
-        sessionStorage.setItem('playerName', playerName);
-        socket.emit('create-game', playerName);
+        const playerName = resolvePlayerName();
+        const player = {
+            name: playerName,
+            avatar: resolvedAvatar,
+        };
+        sessionStorage.setItem('playerName', player.name);
+        socket.emit('create-game', player);
     };
 
     // Action 3: Join Multiplayer Game
     const handleJoinMultiplayerGame = () => {
-        // Name is optional now — default to 'Guest' when empty
-        const playerName = name.trim() === '' ? 'Guest' : name.trim();
-        if (playerName.length > 15) {
-            alert('Player name must be 15 characters or less.');
-            return;
-        }
+        const playerName = resolvePlayerName();
+        const player = {
+            name: playerName,
+            avatar: resolvedAvatar,
+        };
+
         if (gameCode) {
-            // Validate game code format: 5 alphanumeric characters (A-Z,0-9)
             const validCode = /^[A-Z0-9]{5}$/;
             if (!validCode.test(gameCode)) {
-                alert('Invalid game code format. Please enter a 5-character code (letters and numbers).');
+                alert('Invalid game code format.');
                 return;
             }
 
-            sessionStorage.setItem('playerName', playerName);
-            // Ask the server to join — server will reply with success or error
-            socket.emit('join-game', { gameCode, playerName });
+            sessionStorage.setItem('playerName', player.name);
+            socket.emit('join-game', { gameCode, player });
 
             const onJoinSuccess = ({ gameCode: code }: { gameCode: string }) => {
                 router.push(`/lobby/${code}`);
@@ -100,6 +81,16 @@ export default function WelcomePage() {
         }
     };
 
+    useEffect(() => {
+        const onGameCreated = (newGameCode: string) => {
+            router.push(`/lobby/${newGameCode}`);
+        };
+        socket.on('game-created', onGameCreated);
+        return () => {
+            socket.off('game-created', onGameCreated);
+        };
+    }, [router]);
+
     return (
         <div className="relative flex min-h-screen w-full flex-col bg-[#101710]">
             <div className="absolute top-4 right-4">
@@ -118,14 +109,40 @@ export default function WelcomePage() {
                     <h1 className="text-white text-5xl md:text-6xl font-bold tracking-tighter">Trivia World</h1>
                     <p className="text-white/80 text-lg md:text-xl max-w-2xl my-8">The ultimate trivia challenge. Choose your way to play.</p>
 
-                    <input
-                        className="w-full max-w-md h-14 px-6 mb-8 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-primary"
-                        placeholder="Enter Your Name"
-                        type="text"
-                        maxLength={15}
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                    />
+                    {/* --- START: CONDITIONAL UI BLOCK --- */}
+                    <div className="w-full max-w-md h-20 mb-8 flex items-center justify-center">
+                        {loading ? (
+                            <p className="text-white/60">Loading...</p>
+                        ) : user ? (
+                            // Logged-in user view
+                            <div className="flex items-center gap-4 w-full p-3 rounded-md bg-white/5 border border-white/20">
+                                {profile?.avatar_url ? (
+                                    <div className="relative w-12 h-12 rounded-full overflow-hidden">
+                                        <Image src={profile.avatar_url} alt="User Avatar" fill style={{ objectFit: 'cover' }} />
+                                    </div>
+                                ) : (
+                                    <div className="w-12 h-12 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">
+                                        {resolvePlayerName().charAt(0).toUpperCase()}
+                                    </div>
+                                )}
+                                <div>
+                                    <p className="text-sm text-white/60">Playing as</p>
+                                    <p className="text-lg font-bold text-white">{resolvePlayerName()}</p>
+                                </div>
+                            </div>
+                        ) : (
+                            // Guest view
+                            <input
+                                className="w-full h-14 px-6 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-primary"
+                                placeholder="Enter Your Name (Optional)"
+                                type="text"
+                                maxLength={15}
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                            />
+                        )}
+                    </div>
+                    {/* --- END: CONDITIONAL UI BLOCK --- */}
 
                     <div className="w-full max-w-md flex flex-col gap-4">
                         <button

@@ -9,6 +9,7 @@ interface Player {
     id: string;
     name: string;
     score: number;
+    avatar?: string | null;
     // optional runtime fields
     lastAnswer?: string;
     lastAnswerTs?: number;
@@ -69,17 +70,17 @@ io.on('connection', (socket) => {
         console.log('Connected clients: (could not determine)');
     }
 
-    socket.on('create-game', (playerName: string) => {
+    socket.on('create-game', (player: { name: string; avatar: string | null }) => {
         // Generate a simple, random 5-character game code
         const gameCode = Math.random().toString(36).substring(2, 7).toUpperCase();
         socket.join(gameCode);
 
         games[gameCode] = {
-            players: [{ id: socket.id, name: playerName, score: 0 }],
+            players: [{ id: socket.id, name: player.name, score: 0, avatar: player.avatar }],
             host: socket.id,
         };
 
-        console.log(`Game created: ${gameCode} by ${playerName} (${socket.id})`);
+        console.log(`Game created: ${gameCode} by ${player.name} (${socket.id})`);
         console.log('Current games:', Object.keys(games).length);
 
         // Let the creator know the game was successfully created
@@ -88,9 +89,9 @@ io.on('connection', (socket) => {
         io.to(gameCode).emit('update-players', games[gameCode].players);
     });
 
-    socket.on('join-game', ({ gameCode, playerName }: { gameCode: string; playerName: string }) => {
+    socket.on('join-game', ({ gameCode, player }: { gameCode: string; player: { name: string; avatar: string | null } }) => {
         const game = games[gameCode];
-        console.log(`Join request for ${gameCode} by ${playerName} (${socket.id})`);
+        console.log(`Join request for ${gameCode} by ${player.name} (${socket.id})`);
         if (game) {
             socket.join(gameCode);
             // Avoid adding the same socket twice
@@ -100,7 +101,7 @@ io.on('connection', (socket) => {
                 game.players.map((p) => p.name),
             );
             if (!alreadyPresent) {
-                game.players.push({ id: socket.id, name: playerName, score: 0 });
+                game.players.push({ id: socket.id, name: player.name, score: 0, avatar: player.avatar });
             }
             console.log(
                 'Players after join:',
@@ -133,7 +134,7 @@ io.on('connection', (socket) => {
         const game = games[gameCode];
         if (!game) return socket.emit('join-error', 'Game not found.');
 
-        const players = game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer }));
+        const players = game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer, avatar: p.avatar }));
 
         const player = game.players.find((p) => p.id === socket.id);
         const myAnswer = player?.lastAnswer;
@@ -247,7 +248,7 @@ io.on('connection', (socket) => {
         // Broadcast updated players so UI updates (e.g., show who answered)
         io.to(gameCode).emit(
             'update-players',
-            game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer })),
+            game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer, avatar: p.avatar })),
         );
 
         // If everyone has answered, evaluate immediately
@@ -255,7 +256,7 @@ io.on('connection', (socket) => {
         if (allAnswered && !game.evaluating) {
             game.evaluating = true;
             // Notify clients that everyone has answered (don't reveal correct answer yet)
-            io.to(gameCode).emit('all-answered', { players: game.players.map((p) => ({ id: p.id, name: p.name, answered: !!p.lastAnswer })) });
+            io.to(gameCode).emit('all-answered', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer, avatar: p.avatar })) });
 
             // clear the current timeout that would have evaluated later
             if (game.timer) {
@@ -281,7 +282,7 @@ io.on('connection', (socket) => {
 
                 io.to(gameCode).emit('question-ended', {
                     correctAnswer: correct,
-                    players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
+                    players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
                 });
                 delete game.currentAllAnswers;
                 // move to next question after 3s
@@ -384,7 +385,7 @@ io.on('connection', (socket) => {
             // Broadcast final answers and updated scores
             io.to(gameCode).emit('question-ended', {
                 correctAnswer: correct,
-                players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score })),
+                players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
             });
             delete game.currentAllAnswers;
             // Move to next question after short delay (3s)
@@ -407,7 +408,7 @@ io.on('connection', (socket) => {
         }
 
         // Emit final results
-        io.to(gameCode).emit('game-over', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score })) });
+        io.to(gameCode).emit('game-over', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })) });
         delete game.currentAllAnswers;
     };
 
