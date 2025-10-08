@@ -52,23 +52,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [loadProfile, user]);
 
     useEffect(() => {
-        // The onAuthStateChange listener is the single source of truth.
-        // It fires once on initial load with the current session, and then
-        // again whenever the auth state changes (e.g., login, logout).
-        const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
             const currentUser = session?.user ?? null;
             setUser(currentUser);
 
-            // Only load a profile if there is a user.
-            if (currentUser) {
-                await loadProfile(currentUser.id);
-            } else {
-                setProfile(null); // Ensure profile is cleared on logout.
+            if (!currentUser) {
+                setProfile(null);
             }
 
-            // This is the key: once the user and profile are resolved,
-            // the loading process is complete.
+            // Set loading false immediately to unblock the UI
             setLoading(false);
+
+            // Dispatch profile load async without blocking the callback
+            if (currentUser) {
+                setTimeout(async () => {
+                    try {
+                        await loadProfile(currentUser.id);
+                    } catch (error) {
+                        console.error('Error loading profile after auth state change:', error);
+                        setProfile(null); // Fallback to clear profile on error
+                    }
+                }, 0);
+            }
         });
 
         // Cleanup the listener when the component unmounts.

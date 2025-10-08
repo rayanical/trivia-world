@@ -23,6 +23,7 @@ interface Game {
         category?: string;
         difficulty?: string;
         amount?: number;
+        timeLimit?: number | null;
     };
     currentQuestionIndex?: number;
     questions?: Question[];
@@ -41,6 +42,14 @@ type Question = {
     question: string;
     correct_answer: string;
     incorrect_answers: string[];
+};
+
+type TriviaApiQuestionResponse = {
+    category: string;
+    question: { text: string };
+    difficulty: string;
+    correctAnswer: string;
+    incorrectAnswers: string[];
 };
 
 const app = express();
@@ -149,30 +158,33 @@ io.on('connection', (socket) => {
             const idx = game.currentQuestionIndex;
             const raw = game.questions[idx];
             const all_answers = game.currentAllAnswers ?? [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5);
+            const timeLimitSetting = game.settings?.timeLimit;
+            const timeLimit = typeof timeLimitSetting === 'number' && timeLimitSetting > 0 ? timeLimitSetting : null;
+            const endTime = game.questionEndAt ?? (timeLimit ? Date.now() + timeLimit * 1000 : null);
             const question = {
                 index: idx,
                 question: raw.question,
+                category: raw.category,
                 difficulty: raw.difficulty,
                 correct_answer: raw.correct_answer,
                 incorrect_answers: raw.incorrect_answers,
                 all_answers,
-                timeLimit: 15,
-                endTime: game.questionEndAt ?? Date.now() + 15000,
+                timeLimit,
+                endTime,
             };
 
             let remaining = 0;
             if (game.questionEndAt) {
                 remaining = Math.max(0, Math.ceil((game.questionEndAt - Date.now()) / 1000));
             }
-            socket.emit('state', { players, question, timeLeft: remaining, myAnswer });
+            socket.emit('state', { players, question, timeLeft: game.questionEndAt ? remaining : null, myAnswer });
             console.log(`Emitting state for ${socket.id} (question ${question.index} difficulty):`, question.difficulty); // Logs per request
-            socket.emit('state', { players, question, timeLeft: remaining, myAnswer });
         } else {
             socket.emit('state', { players });
         }
     });
     // You would add more events here, like "start-game", "submit-answer", etc.
-    socket.on('start-game', async ({ gameCode, settings }: { gameCode: string; settings?: { category?: string; difficulty?: string; amount?: number } }) => {
+    socket.on('start-game', async ({ gameCode, settings }: { gameCode: string; settings?: { category?: string; difficulty?: string; amount?: number; timeLimit?: number | null } }) => {
         const game = games[gameCode];
         if (!game) return socket.emit('start-error', 'Game not found');
         if (game.host !== socket.id) return socket.emit('start-error', 'Only the host can start the game');
@@ -182,6 +194,7 @@ io.on('connection', (socket) => {
             category: settings?.category,
             difficulty: settings?.difficulty,
             amount: settings?.amount ?? 10,
+            timeLimit: settings?.timeLimit === undefined ? 15 : settings.timeLimit,
         };
 
         // Fetch questions from The Trivia API
@@ -197,15 +210,15 @@ io.on('connection', (socket) => {
             }
 
             const res = await fetch(apiUrl);
-            const data = await res.json();
+            const data = (await res.json()) as TriviaApiQuestionResponse[];
             console.log(
                 'Raw API questions (difficulties only):',
-                data.map((q: any) => q.difficulty),
+                data.map((q) => q.difficulty),
             ); // Should log array like ['medium', 'easy', ...]
             console.log('Sample full question:', data[0]); // Inspect first question fully
             // Format questions to match internal structure
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            game.questions = data.map((q: any) => ({
+            game.questions = data.map((q) => ({
+                category: q.category,
                 question: q.question.text,
                 difficulty: q.difficulty,
                 correct_answer: q.correctAnswer,
@@ -213,9 +226,9 @@ io.on('connection', (socket) => {
             }));
             console.log(
                 'Mapped game.questions (difficulties only):',
-                game.questions.map((q) => q.difficulty),
+                game.questions?.map((q) => q.difficulty),
             ); // Should match raw log
-            console.log('Sample mapped question:', game.questions[0]); // Full object
+            console.log('Sample mapped question:', game.questions?.[0]); // Full object
             game.currentQuestionIndex = 0;
             game.active = true;
 
@@ -280,9 +293,11 @@ io.on('connection', (socket) => {
                     delete p.lastAnswerTs;
                 }
 
+                const transitionEnd = Date.now() + 3000;
                 io.to(gameCode).emit('question-ended', {
                     correctAnswer: correct,
                     players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
+                    transitionEnd,
                 });
                 delete game.currentAllAnswers;
                 // move to next question after 3s
@@ -334,15 +349,19 @@ io.on('connection', (socket) => {
         // Prepare question payload
         const all_answers = [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5);
         game.currentAllAnswers = all_answers; // Store for resync consistency
+        const timeLimitSetting = game.settings?.timeLimit;
+        const timeLimit = typeof timeLimitSetting === 'number' && timeLimitSetting > 0 ? timeLimitSetting : null;
+        const endTime = timeLimit ? Date.now() + timeLimit * 1000 : null;
         const question = {
             index: idx,
             question: raw.question,
+            category: raw.category,
             difficulty: raw.difficulty,
             correct_answer: raw.correct_answer,
             incorrect_answers: raw.incorrect_answers,
             all_answers,
-            timeLimit: 15,
-            endTime: Date.now() + 15000,
+            timeLimit,
+            endTime,
         };
 
         // Clear previous last answers before sending new question
@@ -363,39 +382,46 @@ io.on('connection', (socket) => {
             game.timer = null;
         }
 
-        // Set timer for 15s to evaluate answers
-        game.timer = setTimeout(() => {
-            game.evaluating = true; // Set here to prevent races with late answers
-
-            // Evaluate answers and award 1 point for correct
-            const correct = raw.correct_answer;
-            for (const p of game.players) {
-                const ans = p.lastAnswer;
-                if (ans && ans === correct) {
-                    p.score += 1;
-                }
-                // Clear lastAnswer immediately after scoring
-                delete p.lastAnswer;
-                delete p.lastAnswerTs;
-            }
-
-            // clear questionEndAt since evaluation finished
-            game.questionEndAt = null;
-
-            // Broadcast final answers and updated scores
-            io.to(gameCode).emit('question-ended', {
-                correctAnswer: correct,
-                players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
-            });
-            delete game.currentAllAnswers;
-            // Move to next question after short delay (3s)
-            game.currentQuestionIndex = (game.currentQuestionIndex ?? 0) + 1;
-            // If there are more questions, send next after 3s
+        // Set timer only if timeLimit exists
+        if (timeLimit) {
             game.timer = setTimeout(() => {
-                game.evaluating = false;
-                sendQuestion(gameCode);
-            }, 3000);
-        }, 15000);
+                game.evaluating = true; // Set here to prevent races with late answers
+
+                // Evaluate answers and award 1 point for correct
+                const correct = raw.correct_answer;
+                for (const p of game.players) {
+                    const ans = p.lastAnswer;
+                    if (ans && ans === correct) {
+                        p.score += 1;
+                    }
+                    // Clear lastAnswer immediately after scoring
+                    delete p.lastAnswer;
+                    delete p.lastAnswerTs;
+                }
+
+                // clear questionEndAt since evaluation finished
+                game.questionEndAt = null;
+
+                // Broadcast final answers and updated scores
+                const transitionEnd = Date.now() + 3000;
+                io.to(gameCode).emit('question-ended', {
+                    correctAnswer: correct,
+                    players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
+                    transitionEnd,
+                });
+                delete game.currentAllAnswers;
+                // Move to next question after short delay (3s)
+                game.currentQuestionIndex = (game.currentQuestionIndex ?? 0) + 1;
+                // If there are more questions, send next after 3s
+                game.timer = setTimeout(() => {
+                    game.evaluating = false;
+                    sendQuestion(gameCode);
+                }, 3000);
+            }, timeLimit * 1000);
+        } else {
+            game.timer = null;
+            game.questionEndAt = null;
+        }
     };
 
     const endGame = (gameCode: string) => {

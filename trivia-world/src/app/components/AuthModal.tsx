@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useAlert } from '@/context/AlertContext';
 
 type AuthModalProps = {
     isOpen: boolean;
@@ -25,6 +26,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     const [isSignup, setIsSignup] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const { showAlert } = useAlert();
 
     const handleAuth = async () => {
         setLoading(true);
@@ -74,13 +76,14 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
                     if (statsError) throw statsError;
 
-                    alert('Signup successful!');
+                    showAlert('Signup successful!', 'success');
                     onClose();
                     // Optionally redirect to profile or home
                 }
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
+                showAlert('Signed in successfully!', 'success');
                 onClose();
             }
         } catch (err) {

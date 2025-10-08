@@ -3,6 +3,8 @@ import type { Metadata } from 'next';
 import { Space_Grotesk, Noto_Sans } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
+import { AlertProvider } from '@/context/AlertContext';
+import Alert from './components/Alert';
 
 const spaceGrotesk = Space_Grotesk({
     subsets: ['latin'],
@@ -32,7 +34,12 @@ export default function RootLayout({
                 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=switch" rel="stylesheet" />
             </head>
             <body className={`${spaceGrotesk.variable} ${notoSans.variable} font-sans bg-background text-text-primary`}>
-                <AuthProvider>{children}</AuthProvider>
+                <AlertProvider>
+                    <AuthProvider>
+                        {children}
+                        <Alert />
+                    </AuthProvider>
+                </AlertProvider>
             </body>
         </html>
     );

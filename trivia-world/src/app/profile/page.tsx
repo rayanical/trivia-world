@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { supabase } from '@/lib/supabaseClient';
 import imageCompression from 'browser-image-compression';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/context/AlertContext';
 
 type UserStats = {
     solo_questions_answered: number;
@@ -25,6 +26,8 @@ type UserStats = {
 export default function ProfilePage() {
     const router = useRouter();
     const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth();
+    const { showAlert } = useAlert();
+    const showAlertRef = useRef(showAlert);
 
     const [stats, setStats] = useState<UserStats | null>(null);
     const [fetchingData, setFetchingData] = useState(true);
@@ -36,8 +39,13 @@ export default function ProfilePage() {
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [isEditingUsername, setIsEditingUsername] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'general' | 'solo' | 'multiplayer'>('general');
+
+    useEffect(() => {
+        showAlertRef.current = showAlert;
+    }, [showAlert]);
 
     useEffect(() => {
         if (authLoading) {
@@ -66,6 +74,7 @@ export default function ProfilePage() {
             } catch (err) {
                 const message = err instanceof Error ? err.message : 'Failed to load user data.';
                 setError(message);
+                showAlertRef.current(message);
             } finally {
                 setFetchingData(false);
             }
@@ -103,9 +112,11 @@ export default function ProfilePage() {
             const { error: updateError } = await supabase.from('profiles').update({ username: newUsername.trim() }).eq('id', user.id);
             if (updateError) throw updateError;
             await refreshProfile();
+            setIsEditingUsername(false);
+            showAlert('Username updated successfully!', 'success');
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to update profile';
-            setError(message);
+            showAlert(message);
         } finally {
             setSaving(false);
         }
@@ -128,28 +139,28 @@ export default function ProfilePage() {
             if (updateError) throw updateError;
             setAvatarPreview(publicUrl);
             await refreshProfile();
+            showAlert('Avatar updated successfully!', 'success');
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to upload avatar';
-            setError(message);
+            showAlert(message);
         } finally {
             setUploadingAvatar(false);
         }
     };
 
     const handlePasswordReset = async () => {
-        setError(null);
         try {
             const email = user?.email || userEmail;
             if (!email) {
-                setError('No email available for the current user.');
+                showAlert('No email available for the current user.');
                 return;
             }
             const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
             if (resetError) throw resetError;
-            alert('Password reset email sent!');
+            showAlert('Password reset email sent!', 'success');
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to send reset email';
-            setError(message);
+            showAlert(message);
         }
     };
 
@@ -200,7 +211,7 @@ export default function ProfilePage() {
                     <div className="flex flex-col items-center gap-3 w-full">
                         <div className="w-28 h-28 rounded-full overflow-hidden bg-white/6 flex items-center justify-center">
                             {avatarPreview ? (
-                                // eslint-disable-next-line @next/next/no-img-element -- local data URL preview, ok to use native img
+                                // eslint-disable-next-line @next/next/no-img-element -- local data URL preview
                                 <img src={avatarPreview} alt="avatar-preview" className="w-full h-full object-cover" />
                             ) : authProfile?.avatar_url ? (
                                 <Image src={authProfile.avatar_url} alt="avatar" width={112} height={112} className="object-cover" />
@@ -208,70 +219,66 @@ export default function ProfilePage() {
                                 <Image src="/file.svg" alt="default avatar" width={112} height={112} className="object-cover" />
                             )}
                         </div>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/jpeg, image/png, image/webp, image/gif"
+                            className="hidden"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = () => setAvatarPreview(String(reader.result));
+                                reader.readAsDataURL(file);
+                                void handleAvatarUpload(file);
+                            }}
+                        />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingAvatar}
+                            className="w-full p-2 rounded-md bg-blue-700 hover:bg-blue-600 cursor-pointer disabled:opacity-60"
+                        >
+                            {uploadingAvatar ? 'Uploading…' : 'Upload Avatar'}
+                        </button>
 
-                        <div className="w-full">
-                            <label className="block mb-1 text-sm">Username</label>
-                            <input
-                                type="text"
-                                value={newUsername}
-                                onChange={(e) => setNewUsername(e.target.value)}
-                                className="w-full p-2 rounded-md bg-white/6 mb-2 outline-none focus:ring-2 focus:ring-green-600"
-                            />
+                        <div className="w-full mt-4">
+                            <label className="block mb-1 text-sm text-gray-400">Username</label>
+                            {isEditingUsername ? (
+                                <div className="flex flex-col gap-2">
+                                    <input
+                                        type="text"
+                                        value={newUsername}
+                                        onChange={(e) => setNewUsername(e.target.value)}
+                                        className="w-full p-2 rounded-md bg-white/6 outline-none focus:ring-2 focus:ring-green-600"
+                                    />
+                                    <div className="flex gap-2">
+                                        <button onClick={handleUpdateProfile} disabled={saving} className="flex-1 p-2 rounded-md bg-green-800 hover:bg-green-900 disabled:opacity-60">
+                                            {saving ? 'Saving…' : 'Save'}
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setIsEditingUsername(false);
+                                                setNewUsername(authProfile?.username || '');
+                                            }}
+                                            className="flex-1 p-2 rounded-md bg-gray-700 hover:bg-gray-600"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between">
+                                    <p className="text-lg">{authProfile?.username || '—'}</p>
+                                    <button onClick={() => setIsEditingUsername(true)} className="text-sm text-green-400 hover:underline">
+                                        Change
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
-                        <div className="w-full text-sm text-gray-300">Email: {userEmail ?? '—'}</div>
-
-                        <div className="flex gap-3 w-full">
-                            <button
-                                onClick={handleUpdateProfile}
-                                disabled={saving}
-                                className="flex-1 p-2 rounded-md bg-green-800 hover:bg-green-900 cursor-pointer disabled:opacity-60"
-                            >
-                                {saving ? 'Saving…' : 'Save'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setNewUsername(authProfile?.username || '');
-                                    setAvatarPreview(authProfile?.avatar_url || null);
-                                }}
-                                className="flex-1 p-2 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer"
-                            >
-                                Reset
-                            </button>
-                        </div>
-
-                        <div className="w-full">
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/jpeg, image/png, image/webp, image/gif"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = () => setAvatarPreview(String(reader.result));
-                                    reader.readAsDataURL(file);
-                                    void handleAvatarUpload(file);
-                                }}
-                            />
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    onClick={() => fileInputRef.current?.click()}
-                                    disabled={uploadingAvatar}
-                                    className="flex-1 p-2 rounded-md bg-blue-700 hover:bg-blue-600 cursor-pointer"
-                                >
-                                    {uploadingAvatar ? 'Uploading…' : 'Upload Avatar'}
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setAvatarPreview(authProfile?.avatar_url || null);
-                                    }}
-                                    className="p-2 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
+                        <div className="w-full mt-2">
+                            <label className="block mb-1 text-sm text-gray-400">Email</label>
+                            <p className="text-lg text-gray-300">{userEmail ?? '—'}</p>
                         </div>
 
                         <hr className="my-3 border-white/6 w-full" />

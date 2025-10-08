@@ -14,6 +14,7 @@ type Category = { id: number; name: string };
 type Question = {
     question: string;
     difficulty: 'easy' | 'medium' | 'hard';
+    category: string;
     correct_answer: string;
     incorrect_answers: string[]; // This was missing from your provided code but is needed
     all_answers: string[];
@@ -23,6 +24,7 @@ type TriviaApiQuestion = {
     difficulty: 'easy' | 'medium' | 'hard';
     correctAnswer: string;
     incorrectAnswers: string[];
+    category: string;
 };
 
 // --- Main Component ---
@@ -55,7 +57,8 @@ export default function SoloGamePage() {
     // **State for game setup**
     const [categories, setCategories] = useState<Category[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
-    const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
+    // Default to '' which maps to 'Random' in the UI
+    const [selectedDifficulty, setSelectedDifficulty] = useState<string>('');
     const [gameStarted, setGameStarted] = useState<boolean>(false);
 
     // **State for active game**
@@ -110,6 +113,7 @@ export default function SoloGamePage() {
             return {
                 question: q.question.text, // Question is in a 'text' object
                 difficulty: q.difficulty,
+                category: q.category,
                 correct_answer: q.correctAnswer, // Note the camelCase
                 incorrect_answers: q.incorrectAnswers,
                 all_answers: allAnswers,
@@ -122,10 +126,6 @@ export default function SoloGamePage() {
 
     // --- Game Flow Handlers ---
     const handleStartGame = () => {
-        if (selectedDifficulty === null) {
-            alert('Please select a difficulty.');
-            return;
-        }
         // Reset game state in case user restarts
         setScore(0);
         setQuestions([]);
@@ -287,15 +287,34 @@ export default function SoloGamePage() {
     const currentQuestion = questions[currentQuestionIndex];
 
     const getButtonClass = (answer: string) => {
-        if (!isAnswered) return 'border-[#3C4F3C] bg-[#1A201A] hover:border-primary';
+        if (!isAnswered) return 'border-[#3C4F3C] bg-[#1A201A] hover:bg-[#253325] hover:border-primary';
         if (answer === currentQuestion.correct_answer) return 'border-green-500 bg-green-900';
         if (answer === selectedAnswer) return 'border-red-500 bg-red-900';
         return 'border-[#3C4F3C] bg-[#1A201A]';
     };
 
+    const formatCategory = (apiCategory?: string) => {
+        if (!apiCategory) return 'Mixed';
+        const categoryMap: Record<string, string> = {
+            general_knowledge: 'General Knowledge',
+            film_and_tv: 'Film & TV',
+            music: 'Music',
+            science: 'Science',
+            history: 'History',
+            sport_and_leisure: 'Sport & Leisure',
+            geography: 'Geography',
+            arts_and_literature: 'Arts & Literature',
+            society_and_culture: 'Society & Culture',
+            food_and_drink: 'Food & Drink',
+        };
+        const normalized = apiCategory.toLowerCase().replace(/ /g, '_');
+        if (categoryMap[normalized]) return categoryMap[normalized];
+        return apiCategory.replace(/[_-]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    };
+
     return (
         <>
-            <div className="flex min-h-screen flex-col items-center justify-center bg-[#1A201A] p-4">
+            <div className="flex min-h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white">
                 <div className="absolute top-4 right-4">
                     {profile ? (
                         <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
@@ -338,6 +357,7 @@ export default function SoloGamePage() {
                             <div className="flex flex-col gap-6 rounded-xl bg-[#253325] p-6 shadow-lg">
                                 <div className="flex justify-between text-gray-400">
                                     <span>Question {currentQuestionIndex + 1}</span>
+                                    <span className="capitalize">Category: {formatCategory(currentQuestion.category)}</span>
                                     <span className="capitalize">
                                         Difficulty:{' '}
                                         <span

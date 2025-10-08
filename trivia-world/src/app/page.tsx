@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { socket } from '../lib/socket';
 import AuthModal from './components/AuthModal';
 import { useAuth } from '@/context/AuthContext';
+import { useAlert } from '@/context/AlertContext';
 
 export default function WelcomePage() {
     const router = useRouter();
@@ -14,6 +15,7 @@ export default function WelcomePage() {
     const [gameCode, setGameCode] = useState('');
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const { user, profile, loading } = useAuth();
+    const { showAlert } = useAlert();
 
     const resolvePlayerName = () => {
         const profileName = profile?.username?.trim();
@@ -55,7 +57,7 @@ export default function WelcomePage() {
         if (gameCode) {
             const validCode = /^[A-Z0-9]{5}$/;
             if (!validCode.test(gameCode)) {
-                alert('Invalid game code format.');
+                showAlert('Invalid game code format.');
                 return;
             }
 
@@ -69,7 +71,7 @@ export default function WelcomePage() {
             };
 
             const onJoinError = (msg: string) => {
-                alert(msg);
+                showAlert(msg);
                 socket.off('join-success', onJoinSuccess);
                 socket.off('join-error', onJoinError);
             };
@@ -77,7 +79,7 @@ export default function WelcomePage() {
             socket.on('join-success', onJoinSuccess);
             socket.on('join-error', onJoinError);
         } else {
-            alert('Please enter a game code.');
+            showAlert('Please enter a game code.', 'warning');
         }
     };
 

@@ -10,15 +10,29 @@ import { useAuth } from '@/context/AuthContext';
 import type { User } from '@supabase/supabase-js';
 
 type PlayerView = { id?: string; name: string; score?: number; answered?: boolean; avatar?: string | null };
+const CATEGORY_DISPLAY_MAP: Record<string, string> = {
+    general_knowledge: 'General Knowledge',
+    film_and_tv: 'Film & TV',
+    music: 'Music',
+    science: 'Science',
+    history: 'History',
+    sport_and_leisure: 'Sport & Leisure',
+    geography: 'Geography',
+    arts_and_literature: 'Arts & Literature',
+    society_and_culture: 'Society & Culture',
+    food_and_drink: 'Food & Drink',
+};
+
 type Question = {
     index?: number;
     question: string;
+    category?: string;
     difficulty?: string;
     correct_answer?: string;
     incorrect_answers?: string[];
     all_answers?: string[];
-    timeLimit?: number;
-    endTime?: number; // Absolute end time for sync
+    timeLimit?: number | null;
+    endTime?: number | null; // Absolute end time for sync
 };
 
 export default function LobbyPage() {
@@ -32,10 +46,14 @@ export default function LobbyPage() {
     const [category, setCategory] = useState<string>('');
     const [difficulty, setDifficulty] = useState<string>('');
     const [amount, setAmount] = useState<number>(10);
+    const [isTimeLimitEnabled, setIsTimeLimitEnabled] = useState<boolean>(true);
+    const [timeLimit, setTimeLimit] = useState<number>(15);
     const [inGame, setInGame] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
     const [timeLeft, setTimeLeft] = useState<number>(0);
+    const [isRevealPhase, setIsRevealPhase] = useState(false);
     const timerRef = useRef<number | null>(null);
+    const revealTimerRef = useRef<number | null>(null);
     // Failsafe recovery timer: if we miss a question or transition, this will ask the server for state
     const recoveryTimerRef = useRef<number | null>(null);
 
@@ -49,6 +67,13 @@ export default function LobbyPage() {
     const [isTransitioning, setIsTransitioning] = useState(false);
 
     const maxPlayers = 8;
+
+    const formatCategory = (apiCategory?: string) => {
+        if (!apiCategory) return 'Mixed';
+        const normalized = apiCategory.toLowerCase().replace(/ /g, '_');
+        if (CATEGORY_DISPLAY_MAP[normalized]) return CATEGORY_DISPLAY_MAP[normalized];
+        return apiCategory.replace(/[_-]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    };
 
     useEffect(() => {
         userRef.current = user;
@@ -95,9 +120,14 @@ export default function LobbyPage() {
                 window.clearTimeout(recoveryTimerRef.current);
                 recoveryTimerRef.current = null;
             }
+            if (revealTimerRef.current) {
+                window.clearInterval(revealTimerRef.current);
+                revealTimerRef.current = null;
+            }
             setSelectedAnswer(null);
             setRevealedAnswer(null);
             setIsTransitioning(false);
+            setIsRevealPhase(false);
             setInGame(true);
             setCurrentQuestion(q);
             setTimeLeft(q.endTime ? Math.max(0, Math.ceil((q.endTime - Date.now()) / 1000)) : 0);
@@ -116,21 +146,63 @@ export default function LobbyPage() {
                 setSelectedAnswer((prev) => payload.myAnswer ?? prev); // Preserve local if server state is nullish
             }
         };
-        const onQuestionEnded = async (payload: { players?: PlayerView[]; correctAnswer?: string }) => {
+        const onQuestionEnded = async (payload: { players?: PlayerView[]; correctAnswer?: string; transitionEnd?: number }) => {
             setPlayers(payload.players || []);
             setRevealedAnswer(payload.correctAnswer ?? null);
+            setIsRevealPhase(true);
             setIsTransitioning(true);
-            setTimeout(() => {
-                setCurrentQuestion(null);
-                setTimeLeft(0);
-                setRevealedAnswer(null);
-                setEveryoneAnswered(false);
-            }, 2800);
+            setEveryoneAnswered(false);
+
+            if (timerRef.current) {
+                window.clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+
+            if (revealTimerRef.current) {
+                window.clearInterval(revealTimerRef.current);
+                revealTimerRef.current = null;
+            }
 
             if (recoveryTimerRef.current) {
                 window.clearTimeout(recoveryTimerRef.current);
                 recoveryTimerRef.current = null;
             }
+
+            const transitionEnd = payload.transitionEnd;
+            const remaining = transitionEnd ? Math.max(0, Math.ceil((transitionEnd - Date.now()) / 1000)) : 3;
+            setTimeLeft(remaining);
+
+            if (remaining > 0) {
+                revealTimerRef.current = window.setInterval(() => {
+                    setTimeLeft((prev) => {
+                        const curr = transitionEnd ? Math.max(0, Math.ceil((transitionEnd - Date.now()) / 1000)) : prev - 1;
+                        if (curr <= 0) {
+                            if (revealTimerRef.current) window.clearInterval(revealTimerRef.current);
+                            revealTimerRef.current = null;
+                            setCurrentQuestion(null);
+                            setTimeLeft(0);
+                            setRevealedAnswer(null);
+                            setEveryoneAnswered(false);
+                            setIsTransitioning(false);
+                            setIsRevealPhase(false);
+                            return 0;
+                        }
+                        return curr;
+                    });
+                }, 1000) as unknown as number;
+            } else {
+                if (revealTimerRef.current) {
+                    window.clearInterval(revealTimerRef.current);
+                    revealTimerRef.current = null;
+                }
+                setCurrentQuestion(null);
+                setTimeLeft(0);
+                setRevealedAnswer(null);
+                setEveryoneAnswered(false);
+                setIsTransitioning(false);
+                setIsRevealPhase(false);
+            }
+
             recoveryTimerRef.current = window.setTimeout(() => {
                 if (gameCode) socket.emit('get-state', gameCode);
                 recoveryTimerRef.current = null;
@@ -172,6 +244,16 @@ export default function LobbyPage() {
             setTimeLeft(0);
             setSelectedAnswer(null);
             setRevealedAnswer(null);
+            setIsRevealPhase(false);
+
+            if (timerRef.current) {
+                window.clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+            if (revealTimerRef.current) {
+                window.clearInterval(revealTimerRef.current);
+                revealTimerRef.current = null;
+            }
 
             // Update multiplayer game stats if authenticated
             if (userRef.current && payload.players && payload.players.length > 0) {
@@ -229,6 +311,10 @@ export default function LobbyPage() {
                 window.clearTimeout(recoveryTimerRef.current);
                 recoveryTimerRef.current = null;
             }
+            if (revealTimerRef.current) {
+                window.clearInterval(revealTimerRef.current);
+                revealTimerRef.current = null;
+            }
         };
     }, [gameCode]);
 
@@ -253,6 +339,7 @@ export default function LobbyPage() {
 
     // Countdown timer: Recalculate based on endTime to handle throttling
     useEffect(() => {
+        if (isRevealPhase) return;
         if (!currentQuestion?.endTime || timeLeft <= 0) {
             if (timerRef.current) {
                 window.clearInterval(timerRef.current);
@@ -279,7 +366,7 @@ export default function LobbyPage() {
                 timerRef.current = null;
             }
         };
-    }, [currentQuestion?.endTime, timeLeft, gameCode]);
+    }, [currentQuestion?.endTime, timeLeft, gameCode, isRevealPhase]);
 
     const currentPlayerName = typeof window !== 'undefined' ? sessionStorage.getItem('playerName') : null;
     const isHost = players.length > 0 && players[0].name === currentPlayerName;
@@ -290,12 +377,13 @@ export default function LobbyPage() {
             category: category || undefined,
             difficulty: difficulty || undefined,
             amount: amount || 10,
+            timeLimit: isTimeLimitEnabled ? timeLimit : null,
         };
         socket.emit('start-game', { gameCode, settings });
     };
 
     const handleSubmitAnswer = (answer: string) => {
-        if (!gameCode || currentQuestion?.index == null || timeLeft <= 0) return;
+        if (!gameCode || currentQuestion?.index == null || (currentQuestion?.timeLimit && timeLeft <= 0)) return;
         if (selectedAnswer) return; // prevent re-clicks
         setSelectedAnswer(answer);
         console.log('Answer set and emitted:', { answer, questionIndex: currentQuestion?.index, timeLeft });
@@ -385,6 +473,29 @@ export default function LobbyPage() {
                                         className="w-full p-2 rounded-md bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-green-800 cursor-pointer"
                                     />
                                 </div>
+                                <div>
+                                    <label className="block mb-2 font-bold">Time Limit</label>
+                                    <div className="flex items-center gap-4 mb-2">
+                                        <span>Enable Time Limit</span>
+                                        <label className="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" checked={isTimeLimitEnabled} onChange={(e) => setIsTimeLimitEnabled(e.target.checked)} className="sr-only peer" />
+                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+                                        </label>
+                                    </div>
+                                    {isTimeLimitEnabled && (
+                                        <input
+                                            type="number"
+                                            value={timeLimit}
+                                            min={5}
+                                            max={45}
+                                            onChange={(e) => {
+                                                const val = Number(e.target.value);
+                                                if (val >= 5 && val <= 45) setTimeLimit(val);
+                                            }}
+                                            className="w-full p-2 rounded-md bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-green-800 cursor-pointer"
+                                        />
+                                    )}
+                                </div>
                                 <div className="flex gap-4">
                                     <button onClick={handleLeave} className="flex-1 h-14 rounded-md bg-gray-700 text-xl font-bold hover:bg-gray-800 cursor-pointer">
                                         Home
@@ -447,11 +558,12 @@ export default function LobbyPage() {
                         <span>Game Code: {gameCode}</span>
                         <div className="text-sm">Players: {players.length}</div>
                     </div>
-                    <div className="rounded-xl border border-border-color p-6 bg-[#253325] w-full">
+                    <div className="rounded-xl p-6 bg-[#253325] w-full">
                         <div className="flex justify-between items-center mb-4">
                             <div className="flex flex-col w-full">
-                                <div className="flex justify-between text-gray-400 mb-4">
+                                <div className="flex flex-wrap gap-4 justify-between text-gray-400 mb-4">
                                     <span>Question {currentQuestion?.index != null ? currentQuestion.index + 1 : ''}</span>
+                                    <span className="capitalize">Category: {formatCategory(currentQuestion?.category)}</span>
                                     <span className="capitalize">
                                         Difficulty:{' '}
                                         <span
@@ -470,8 +582,12 @@ export default function LobbyPage() {
                                 <div className="flex justify-between items-start">
                                     <h3 className="text-xl font-bold max-w-3xl">{currentQuestion?.question}</h3>
                                     <div className="text-center ml-4">
-                                        <div className="text-sm text-gray-300">Time Left</div>
-                                        <div className="text-3xl font-bold">{timeLeft}s</div>
+                                        {(isRevealPhase || !!currentQuestion?.timeLimit) && (
+                                            <>
+                                                <div className="text-sm text-gray-300">{isRevealPhase ? 'Next in' : 'Time Left'} </div>
+                                                <div className="text-3xl font-bold">{timeLeft}s </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -496,7 +612,7 @@ export default function LobbyPage() {
                                         key={ans}
                                         onClick={() => handleSubmitAnswer(ans)}
                                         className={`p-4 rounded-lg text-left transition-all ${buttonClass}`}
-                                        disabled={timeLeft <= 0}
+                                        disabled={isRevealPhase || (!!currentQuestion?.timeLimit && timeLeft <= 0)}
                                     >
                                         {ans}
                                     </button>
