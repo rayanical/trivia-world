@@ -4,6 +4,7 @@
     "private": true,
     "dependencies": {
         "@supabase/supabase-js": "^2.57.4",
+        "@vercel/analytics": "^1.5.0",
         "browser-image-compression": "^2.0.2",
         "cors": "^2.8.5",
         "express": "^5.1.0",

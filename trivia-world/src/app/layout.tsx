@@ -5,6 +5,7 @@ import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
 import Alert from './components/Alert';
+import { Analytics } from '@vercel/analytics/next';
 
 const spaceGrotesk = Space_Grotesk({
     subsets: ['latin'],
@@ -43,6 +44,8 @@ export default function RootLayout({
                 <AlertProvider>
                     <AuthProvider>
                         {children}
+                        <Analytics />
+
                         <Alert />
                     </AuthProvider>
                 </AlertProvider>
