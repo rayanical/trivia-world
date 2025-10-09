@@ -67,20 +67,19 @@ const io = new Server(server, {
 // In-memory storage for game states using a typed record
 const games: Record<string, Game> = {};
 
+/**
+ * Establishes per-socket handlers for multiplayer trivia gameplay coordination.
+ * @param socket - Connected Socket.IO client instance.
+ */
 io.on('connection', (socket) => {
-    console.log(`User Connected: ${socket.id}`);
-    try {
-        // Log current connected sockets count for debugging
-        // (io.sockets.sockets is a Map of socketId => Socket)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const connectedCount = (io.sockets as any).sockets.size;
-        console.log(`Connected clients: ${connectedCount}`);
-    } catch {
-        console.log('Connected clients: (could not determine)');
-    }
-
+    /**
+     * Socket.io event: Creates a new multiplayer trivia game.
+     * @event create-game
+     * @param player - Initial player payload containing name and avatar URL.
+     * @emits game-created - Returns the generated lobby code to the host.
+     * @emits update-players - Shares the initial player roster with the room.
+     */
     socket.on('create-game', (player: { name: string; avatar: string | null }) => {
-        // Generate a simple, random 5-character game code
         const gameCode = Math.random().toString(36).substring(2, 7).toUpperCase();
         socket.join(gameCode);
 
@@ -89,33 +88,30 @@ io.on('connection', (socket) => {
             host: socket.id,
         };
 
-        console.log(`Game created: ${gameCode} by ${player.name} (${socket.id})`);
-        console.log('Current games:', Object.keys(games).length);
-
         // Let the creator know the game was successfully created
         socket.emit('game-created', gameCode);
         // Broadcast the initial player list to the room (creator only right now)
         io.to(gameCode).emit('update-players', games[gameCode].players);
     });
 
+    /**
+     * Socket.io event: Allows a player to join an existing multiplayer lobby.
+     * @event join-game
+     * @param payload.gameCode - Target lobby identifier provided by the client.
+     * @param payload.player - Joining player's display name and avatar URL.
+     * @emits update-players - Shares the refreshed roster with lobby members.
+     * @emits join-success - Confirms successful entry to the requesting client.
+     * @emits join-error - Indicates that the requested lobby does not exist.
+     */
     socket.on('join-game', ({ gameCode, player }: { gameCode: string; player: { name: string; avatar: string | null } }) => {
         const game = games[gameCode];
-        console.log(`Join request for ${gameCode} by ${player.name} (${socket.id})`);
         if (game) {
             socket.join(gameCode);
             // Avoid adding the same socket twice
             const alreadyPresent = game.players.some((p) => p.id === socket.id);
-            console.log(
-                'Players before join:',
-                game.players.map((p) => p.name),
-            );
             if (!alreadyPresent) {
                 game.players.push({ id: socket.id, name: player.name, score: 0, avatar: player.avatar });
             }
-            console.log(
-                'Players after join:',
-                game.players.map((p) => p.name),
-            );
 
             // Notify everyone in the room about the updated player list
             io.to(gameCode).emit('update-players', game.players);
@@ -128,6 +124,13 @@ io.on('connection', (socket) => {
     });
 
     // Allow clients to request the current player list for a game
+    /**
+     * Socket.io event: Returns the current roster for a given lobby.
+     * @event get-players
+     * @param gameCode - The lobby code whose player list is requested.
+     * @emits update-players - Responds with the latest player data for the caller.
+     * @emits join-error - Sent when the lobby cannot be found.
+     */
     socket.on('get-players', (gameCode: string) => {
         const game = games[gameCode];
         if (game) {
@@ -139,6 +142,13 @@ io.on('connection', (socket) => {
     });
 
     // Provide a lightweight snapshot to clients that ask for it (used for recovery)
+    /**
+     * Socket.io event: Provides a snapshot of game state for reconnecting clients.
+     * @event get-state
+     * @param gameCode - The lobby code whose state should be synchronized.
+     * @emits state - Returns players, question data, and remaining time.
+     * @emits join-error - Indicates that the lobby no longer exists.
+     */
     socket.on('get-state', (gameCode: string) => {
         const game = games[gameCode];
         if (!game) return socket.emit('join-error', 'Game not found.');
@@ -178,12 +188,20 @@ io.on('connection', (socket) => {
                 remaining = Math.max(0, Math.ceil((game.questionEndAt - Date.now()) / 1000));
             }
             socket.emit('state', { players, question, timeLeft: game.questionEndAt ? remaining : null, myAnswer });
-            console.log(`Emitting state for ${socket.id} (question ${question.index} difficulty):`, question.difficulty); // Logs per request
         } else {
             socket.emit('state', { players });
         }
     });
     // You would add more events here, like "start-game", "submit-answer", etc.
+    /**
+     * Socket.io event: Begins a multiplayer trivia match using the provided settings.
+     * @event start-game
+     * @param payload.gameCode - Lobby code for the match to start.
+     * @param payload.settings - Host-selected category, difficulty, question count, and timer.
+     * @emits start-error - Signals problems such as missing lobby or unauthorized host.
+     * @emits game-started - Broadcasts applied settings to all players.
+     * @emits question - Sends the first formatted question to the lobby.
+     */
     socket.on('start-game', async ({ gameCode, settings }: { gameCode: string; settings?: { category?: string; difficulty?: string; amount?: number; timeLimit?: number | null } }) => {
         const game = games[gameCode];
         if (!game) return socket.emit('start-error', 'Game not found');
@@ -211,11 +229,6 @@ io.on('connection', (socket) => {
 
             const res = await fetch(apiUrl);
             const data = (await res.json()) as TriviaApiQuestionResponse[];
-            console.log(
-                'Raw API questions (difficulties only):',
-                data.map((q) => q.difficulty),
-            ); // Should log array like ['medium', 'easy', ...]
-            console.log('Sample full question:', data[0]); // Inspect first question fully
             // Format questions to match internal structure
             game.questions = data.map((q) => ({
                 category: q.category,
@@ -224,11 +237,6 @@ io.on('connection', (socket) => {
                 correct_answer: q.correctAnswer,
                 incorrect_answers: q.incorrectAnswers,
             }));
-            console.log(
-                'Mapped game.questions (difficulties only):',
-                game.questions?.map((q) => q.difficulty),
-            ); // Should match raw log
-            console.log('Sample mapped question:', game.questions?.[0]); // Full object
             game.currentQuestionIndex = 0;
             game.active = true;
 
@@ -242,6 +250,16 @@ io.on('connection', (socket) => {
     });
 
     // Players submit answers
+    /**
+     * Socket.io event: Registers a player's answer for the active question.
+     * @event submit-answer
+     * @param payload.gameCode - Lobby code for the current match.
+     * @param payload.answer - Answer text selected by the player.
+     * @param payload.questionIndex - Index of the question the answer belongs to.
+     * @emits update-players - Reflects which participants have responded.
+     * @emits all-answered - Signals when every player has submitted an answer.
+     * @emits question-ended - Reveals correct answers after evaluation.
+     */
     socket.on('submit-answer', ({ gameCode, answer, questionIndex }: { gameCode: string; answer: string; questionIndex: number }) => {
         const game = games[gameCode];
         if (!game || !game.active) return;
@@ -294,6 +312,13 @@ io.on('connection', (socket) => {
                 }
 
                 const transitionEnd = Date.now() + 3000;
+                /**
+                 * Socket.io event: Reveals the correct answer and updated scores after evaluation.
+                 * @event question-ended
+                 * @param payload.correctAnswer - The authoritative answer for the completed question.
+                 * @param payload.players - Player list augmented with latest scores.
+                 * @param payload.transitionEnd - Timestamp signaling when the reveal phase finishes.
+                 */
                 io.to(gameCode).emit('question-ended', {
                     correctAnswer: correct,
                     players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
@@ -311,30 +336,37 @@ io.on('connection', (socket) => {
     });
 
     // Allow a player to leave the game voluntarily
+    /**
+     * Socket.io event: Removes a player from the lobby and reassigns host when needed.
+     * @event leave-game
+     * @param payload.gameCode - Lobby code the player wishes to exit.
+     * @emits update-players - Broadcasts the new roster after removal.
+     */
     socket.on('leave-game', ({ gameCode }: { gameCode: string }) => {
         const game = games[gameCode];
         if (!game) return;
         const idx = game.players.findIndex((p) => p.id === socket.id);
         if (idx !== -1) {
-            const removed = game.players.splice(idx, 1)[0];
-            console.log(`Player ${removed.name} left game ${gameCode}`);
+            game.players.splice(idx, 1);
         }
 
         socket.leave(gameCode);
 
         if (game.players.length === 0) {
             delete games[gameCode];
-            console.log(`Game ${gameCode} abandoned (no players left).`);
         } else {
             if (game.host === socket.id) {
                 game.host = game.players[0].id;
-                console.log(`Host left for game ${gameCode}, new host is ${game.players[0].name} (${game.host})`);
             }
             io.to(gameCode).emit('update-players', game.players);
         }
     });
 
-    // Helper: send current question and start 15s timer
+    /**
+     * Emits the next trivia question and starts any associated countdown timers.
+     * @param gameCode - Lobby code whose participants should receive the question.
+     * @emits question - Sends formatted question data to every player in the lobby.
+     */
     const sendQuestion = (gameCode: string) => {
         const game = games[gameCode];
         if (!game || !game.questions) return;
@@ -369,8 +401,6 @@ io.on('connection', (socket) => {
             delete p.lastAnswer;
             delete p.lastAnswerTs;
         }
-        console.log(`Emitting question ${idx} (difficulty):`, question.difficulty); // Per question
-        console.log('Full question payload:', question); // If verbose needed
         io.to(gameCode).emit('question', question);
 
         // record when this question will end (ms since epoch)
@@ -424,6 +454,11 @@ io.on('connection', (socket) => {
         }
     };
 
+    /**
+     * Finalizes the match, clears timers, and shares the concluding leaderboard.
+     * @param gameCode - Lobby code whose game lifecycle is ending.
+     * @emits game-over - Broadcasts final player standings to all participants.
+     */
     const endGame = (gameCode: string) => {
         const game = games[gameCode];
         if (!game) return;
@@ -434,29 +469,34 @@ io.on('connection', (socket) => {
         }
 
         // Emit final results
+        /**
+         * Socket.io event: Announces the final leaderboard and concludes the match.
+         * @event game-over
+         * @param payload.players - Player standings with final scores and avatars.
+         */
         io.to(gameCode).emit('game-over', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })) });
         delete game.currentAllAnswers;
     };
 
-    socket.on('disconnect', (reason) => {
-        console.log(`User Disconnected: ${socket.id} (${reason})`);
-
+    /**
+     * Socket.io event: Cleans up player state when a socket disconnects unexpectedly.
+     * @event disconnect
+     * @param reason - Description supplied by Socket.IO for the disconnect.
+     */
+    socket.on('disconnect', () => {
         // Remove this socket/player from any games they are in
         for (const [code, game] of Object.entries(games)) {
             const idx = game.players.findIndex((p) => p.id === socket.id);
             if (idx !== -1) {
-                const removed = game.players.splice(idx, 1)[0];
-                console.log(`Removed player ${removed.name} from game ${code}`);
+                game.players.splice(idx, 1);
 
                 if (game.players.length === 0) {
                     // No players left: abandon the game
                     delete games[code];
-                    console.log(`Game ${code} abandoned (no players left).`);
                 } else {
                     // If host left, assign new host (first player)
                     if (game.host === socket.id) {
                         game.host = game.players[0].id;
-                        console.log(`Host left for game ${code}, new host is ${game.players[0].name} (${game.host})`);
                     }
                     // Emit updated player list to remaining players
                     io.to(code).emit('update-players', game.players);
@@ -468,5 +508,5 @@ io.on('connection', (socket) => {
 
 const PORT = 3001;
 server.listen(PORT, () => {
-    console.log(`🚀 Trivia server running on port ${PORT}`);
+    console.info(`🚀 Trivia server running on port ${PORT}`);
 });

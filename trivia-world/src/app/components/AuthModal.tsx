@@ -1,4 +1,3 @@
-// app/components/AuthModal.tsx
 'use client';
 
 import { useState } from 'react';
@@ -10,6 +9,11 @@ type AuthModalProps = {
     onClose: () => void;
 };
 
+/**
+ * Validates password complexity requirements for sign-up flows.
+ * @param password - Raw password input supplied by the user.
+ * @returns Descriptive error string when invalid, otherwise null.
+ */
 const validatePassword = (password: string): string | null => {
     if (password.length < 8) return 'Password must be at least 8 characters';
     if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter';
@@ -19,22 +23,29 @@ const validatePassword = (password: string): string | null => {
     return null;
 };
 
+/**
+ * Presents a modal for signing in or creating an account via Supabase authentication.
+ * @param props - Control flags and callbacks for the modal lifecycle.
+ * @returns Authentication modal dialog or null when closed.
+ */
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [username, setUsername] = useState(''); // For signup
+    const [username, setUsername] = useState('');
     const [isSignup, setIsSignup] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const { showAlert } = useAlert();
 
+    /**
+     * Handles email-based sign in or sign up flows, including profile provisioning.
+     */
     const handleAuth = async () => {
         setLoading(true);
         setError(null);
 
         try {
             if (isSignup) {
-                // Validate password
                 const passwordError = validatePassword(password);
                 if (passwordError) {
                     setError(passwordError);
@@ -42,45 +53,52 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     return;
                 }
 
-                // Validate username length
                 if (username.length > 15) {
                     setError('Username must be 15 characters or less');
                     setLoading(false);
                     return;
                 }
 
+                /**
+                 * Registers a new user with Supabase Auth and attaches the requested username.
+                 */
                 const { data, error } = await supabase.auth.signUp({
                     email,
                     password,
                     options: {
-                        data: { username }, // Optional: Store username in auth.users metadata if needed
+                        data: { username },
                     },
                 });
                 if (error) throw error;
 
                 if (data.user) {
-                    // Use upsert for profiles to avoid duplicate key errors (e.g., if trigger creates it)
+                    /**
+                     * Upserts the user's profile metadata with username and timestamp.
+                     */
                     const { error: profileError } = await supabase.from('profiles').upsert({
                         id: data.user.id,
                         username,
-                        updated_at: new Date().toISOString(), // Ensure updated_at is set
+                        updated_at: new Date().toISOString(),
                     });
 
                     if (profileError) throw profileError;
 
-                    // Use upsert for user_stats (insert if not exists, update otherwise)
+                    /**
+                     * Initializes statistics tracking entry for the new account.
+                     */
                     const { error: statsError } = await supabase.from('user_stats').upsert({
                         user_id: data.user.id,
-                        // Defaults are 0, so upsert will insert with defaults if new
                     });
 
                     if (statsError) throw statsError;
 
                     showAlert('Signup successful!', 'success');
                     onClose();
-                    // Optionally redirect to profile or home
                 }
             } else {
+                /**
+                 * Authenticates an existing user via Supabase email/password credentials.
+                 */
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
                 showAlert('Signed in successfully!', 'success');
@@ -93,11 +111,17 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         }
     };
 
-    // **NEW FUNCTION TO HANDLE GOOGLE SIGN IN**
+    /**
+     * Initiates an OAuth sign-in flow with the supplied provider using Supabase Auth.
+     * @param provider - External identity provider identifier (currently Google).
+     */
     const handleOAuthSignIn = async (provider: 'google') => {
         setLoading(true);
         setError(null);
         try {
+            /**
+             * Delegates authentication to the provider using Supabase-managed OAuth.
+             */
             const { error } = await supabase.auth.signInWithOAuth({
                 provider,
                 options: {
@@ -159,7 +183,6 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     {isSignup ? 'Switch to Sign In' : 'Switch to Sign Up'}
                 </button>
 
-                {/* **NEW UI FOR GOOGLE SIGN IN** */}
                 <div className="relative my-6">
                     <div className="absolute inset-0 flex items-center" aria-hidden="true">
                         <div className="w-full border-t border-gray-500" />

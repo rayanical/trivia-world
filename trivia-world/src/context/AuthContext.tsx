@@ -18,7 +18,15 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+/**
+ * Loads the profile metadata for a Supabase user, tolerating missing rows.
+ * @param userId - Supabase auth identifier for the user whose profile is fetched.
+ * @returns The profile record or null when unavailable.
+ */
 async function fetchProfile(userId: string): Promise<Profile | null> {
+    /**
+     * Queries the Supabase `profiles` table for username and avatar fields.
+     */
     const { data, error } = await supabase.from('profiles').select('username, avatar_url').eq('id', userId).maybeSingle();
 
     if (error && (error as PostgrestError).code !== 'PGRST116') {
@@ -32,10 +40,15 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
     };
 }
 
+/**
+ * Supplies authenticated user state and profile metadata to descendant components.
+ * @param props - Children elements to render within the provider.
+ * @returns JSX Provider wrapping authentication context.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<Profile | null>(null);
-    const [loading, setLoading] = useState(true); // Start true on initial load
+    const [loading, setLoading] = useState(true);
 
     const loadProfile = useCallback(async (userId: string | null) => {
         if (!userId) {
@@ -60,23 +73,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setProfile(null);
             }
 
-            // Set loading false immediately to unblock the UI
             setLoading(false);
 
-            // Dispatch profile load async without blocking the callback
             if (currentUser) {
                 setTimeout(async () => {
                     try {
                         await loadProfile(currentUser.id);
                     } catch (error) {
                         console.error('Error loading profile after auth state change:', error);
-                        setProfile(null); // Fallback to clear profile on error
+                        setProfile(null);
                     }
                 }, 0);
             }
         });
-
-        // Cleanup the listener when the component unmounts.
         return () => {
             authListener?.subscription.unsubscribe();
         };
@@ -95,6 +104,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/**
+ * Consumes the authentication context and throws if used outside the provider.
+ * @returns The current auth context including user, profile, and helpers.
+ */
 export function useAuth() {
     const context = useContext(AuthContext);
     if (!context) {

@@ -22,6 +22,11 @@ export const metadata: Metadata = {
     description: 'Challenge your friends in real-time trivia!',
 };
 
+/**
+ * Provides the global HTML structure, fonts, and shared context providers for the app.
+ * @param children - React subtree for the current route segment.
+ * @returns The HTML document skeleton with wrapped providers.
+ */
 export default function RootLayout({
     children,
 }: Readonly<{

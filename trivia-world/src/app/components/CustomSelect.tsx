@@ -1,13 +1,16 @@
-// app/components/CustomSelect.tsx
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 
-// ... (types and props are the same) ...
 type Option = { value: string; label: string };
 type CustomSelectProps = { options: Option[]; value: string; onChange: (value: string) => void; placeholder: string };
 
-export default function CustomSelect({ options, value, onChange, placeholder }: CustomSelectProps) {
+/**
+ * Displays a stylized dropdown select component with custom theming.
+ * @param props - List of selectable options, the current value, and callbacks.
+ * @returns A toggleable dropdown menu for choosing an option.
+ */
+function CustomSelect({ options, value, onChange, placeholder }: CustomSelectProps) {
     const [isOpen, setIsOpen] = useState(false);
     const selectRef = useRef<HTMLDivElement>(null);
     const selectedLabel = options.find((opt) => opt.value === value)?.label || placeholder;
@@ -41,7 +44,6 @@ export default function CustomSelect({ options, value, onChange, placeholder }: 
                                 onChange(option.value);
                                 setIsOpen(false);
                             }}
-                            // FIX: Explicitly adding hover:bg-primary for clear highlighting
                             className="px-4 py-3 text-white cursor-pointer hover:bg-green-800 transition-colors "
                         >
                             {option.label}
@@ -52,3 +54,5 @@ export default function CustomSelect({ options, value, onChange, placeholder }: 
         </div>
     );
 }
+
+export default memo(CustomSelect);

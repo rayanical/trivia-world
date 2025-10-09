@@ -1,5 +1,5 @@
-// lib/socket.ts
 import { io } from 'socket.io-client';
 
-// Use the URL of your deployed server in production
-export const socket = io('http://localhost:3001');
+const URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+
+export const socket = io(URL);

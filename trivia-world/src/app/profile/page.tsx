@@ -23,6 +23,10 @@ type UserStats = {
     multiplayer_hard_correct: number;
 };
 
+/**
+ * Renders the authenticated user's profile dashboard with account management and statistics.
+ * @returns Profile management view including avatar upload, username edit, and game stats.
+ */
 export default function ProfilePage() {
     const router = useRouter();
     const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth();
@@ -64,6 +68,10 @@ export default function ProfilePage() {
                 setNewUsername(authProfile?.username || '');
                 setAvatarPreview(authProfile?.avatar_url || null);
 
+                /**
+                 * Retrieves detailed gameplay statistics for the logged-in user from Supabase.
+                 * Returns solo and multiplayer aggregates for display across the dashboard tabs.
+                 */
                 const { data: statsData, error: statsError } = await supabase.from('user_stats').select('*').eq('user_id', user.id).single();
 
                 if (statsError && (statsError as { code?: string }).code !== 'PGRST116') {
@@ -102,13 +110,25 @@ export default function ProfilePage() {
         );
     }, [stats]);
 
+    /**
+     * Calculates a percentage helper for statistic cards while guarding division by zero.
+     * @param num - The numerator count, typically correct answers.
+     * @param denom - The denominator count, typically total attempts.
+     * @returns Formatted percentage or em dash when denominator is zero.
+     */
     const percent = (num: number, denom: number) => (denom === 0 ? '—' : `${Math.round((num / denom) * 100)}%`);
 
+    /**
+     * Persists username edits for the current user profile and refreshes cached context data.
+     */
     const handleUpdateProfile = async () => {
         if (!user) return;
         setSaving(true);
         setError(null);
         try {
+            /**
+             * Updates the Supabase `profiles` table with the new display name for the user.
+             */
             const { error: updateError } = await supabase.from('profiles').update({ username: newUsername.trim() }).eq('id', user.id);
             if (updateError) throw updateError;
             await refreshProfile();
@@ -122,6 +142,10 @@ export default function ProfilePage() {
         }
     };
 
+    /**
+     * Uploads a new avatar to Supabase Storage and synchronizes the public profile reference.
+     * @param file - The selected image file chosen by the user.
+     */
     const handleAvatarUpload = async (file: File) => {
         if (!user) return;
         setUploadingAvatar(true);
@@ -130,13 +154,15 @@ export default function ProfilePage() {
             if (authProfile?.avatar_url) {
                 const oldAvatarPath = authProfile.avatar_url.split('/avatars/').pop();
                 if (oldAvatarPath) {
+                    /**
+                     * Removes the previous avatar asset from Supabase Storage to avoid orphaned files.
+                     */
                     await supabase.storage.from('avatars').remove([oldAvatarPath]);
                 }
             }
 
             let fileToUpload = file;
 
-            // ** Only compress if the file is NOT a GIF **
             if (file.type !== 'image/gif') {
                 const options = { maxSizeMB: 2, maxWidthOrHeight: 1024, useWebWorker: true };
                 const compressedFile = await imageCompression(file, options);
@@ -146,12 +172,20 @@ export default function ProfilePage() {
             const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '-');
             const path = `${user.id}/${Date.now()}_${cleanFileName}`;
 
-            // Use the (potentially uncompressed) fileToUpload
+            /**
+             * Stores the optimized avatar image in Supabase Storage under the user's namespace.
+             */
             const { error: uploadError } = await supabase.storage.from('avatars').upload(path, fileToUpload);
 
             if (uploadError) throw uploadError;
+            /**
+             * Resolves a public URL for the newly uploaded avatar file to use in the profile record.
+             */
             const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
             const publicUrl = (urlData as { publicUrl?: string } | null)?.publicUrl || '';
+            /**
+             * Saves the avatar URL to the user's profile so it propagates across the application.
+             */
             const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
             if (updateError) throw updateError;
             setAvatarPreview(publicUrl);
@@ -165,6 +199,9 @@ export default function ProfilePage() {
         }
     };
 
+    /**
+     * Requests a Supabase password reset email for the current account.
+     */
     const handlePasswordReset = async () => {
         try {
             const email = user?.email || userEmail;
@@ -172,6 +209,9 @@ export default function ProfilePage() {
                 showAlert('No email available for the current user.');
                 return;
             }
+            /**
+             * Initiates Supabase Auth password recovery for the supplied email address.
+             */
             const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
             if (resetError) throw resetError;
             showAlert('Password reset email sent!', 'success');
@@ -181,11 +221,20 @@ export default function ProfilePage() {
         }
     };
 
+    /**
+     * Signs the user out via Supabase Auth and returns to the homepage.
+     */
     const handleLogout = async () => {
+        /**
+         * Clears Supabase Auth session tokens to complete sign-out.
+         */
         await supabase.auth.signOut();
         router.push('/');
     };
 
+    /**
+     * Navigates back to the landing page without altering authentication state.
+     */
     const handleBackHome = () => router.push('/');
 
     if (authLoading || fetchingData) {
@@ -221,7 +270,6 @@ export default function ProfilePage() {
             </header>
 
             <main className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Left: Profile form */}
                 <section className="md:col-span-1 bg-white/5 rounded-lg p-6 flex flex-col items-center gap-4">
                     <h2 className="text-xl font-semibold">Account</h2>
 
@@ -313,8 +361,6 @@ export default function ProfilePage() {
                         </div>
                     </div>
                 </section>
-
-                {/* Right: Stats */}
                 <section className="md:col-span-2 bg-white/5 rounded-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-semibold">Statistics</h2>

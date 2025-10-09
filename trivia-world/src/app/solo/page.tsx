@@ -1,22 +1,21 @@
-// app/solo/page.tsx
 'use client';
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Spinner from '../components/Spinner';
 import CustomSelect from '../components/CustomSelect';
-import { supabase } from '@/lib/supabaseClient'; // <-- Import Supabase
-import AuthModal from '../components/AuthModal';
+import { supabase } from '@/lib/supabaseClient';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/context/AuthContext';
 import Image from 'next/image';
-// --- Type Definitions ---
+const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
 type Category = { id: number; name: string };
 type Question = {
     question: string;
     difficulty: 'easy' | 'medium' | 'hard';
     category: string;
     correct_answer: string;
-    incorrect_answers: string[]; // This was missing from your provided code but is needed
+    incorrect_answers: string[];
     all_answers: string[];
 };
 type TriviaApiQuestion = {
@@ -27,7 +26,10 @@ type TriviaApiQuestion = {
     category: string;
 };
 
-// --- Main Component ---
+/**
+ * Renders the solo trivia game experience, including setup, gameplay, and summary states.
+ * @returns The solo trivia game interface with configuration controls and question flow.
+ */
 export default function SoloGamePage() {
     const router = useRouter();
     const { user, profile } = useAuth();
@@ -36,7 +38,6 @@ export default function SoloGamePage() {
     const [playerName, setPlayerName] = useState<string>('Guest');
     const [playerAvatar, setPlayerAvatar] = useState<string | null>(null);
 
-    // Read player name and avatar from profile/sessionStorage
     useEffect(() => {
         try {
             const stored = sessionStorage.getItem('playerName');
@@ -54,26 +55,21 @@ export default function SoloGamePage() {
         setPlayerAvatar(profile?.avatar_url ?? null);
     }, [profile]);
 
-    // **State for game setup**
     const [categories, setCategories] = useState<Category[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<string>('');
-    // Default to '' which maps to 'Random' in the UI
     const [selectedDifficulty, setSelectedDifficulty] = useState<string>('');
     const [gameStarted, setGameStarted] = useState<boolean>(false);
 
-    // **State for active game**
     const [questions, setQuestions] = useState<Question[]>([]);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [score, setScore] = useState(0);
-    const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null); // Add this state
+    const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [isAnswered, setIsAnswered] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isGameOver, setIsGameOver] = useState(false);
     const gameContainerRef = useRef<HTMLDivElement>(null);
 
-    // --- Data Fetching ---
     useEffect(() => {
-        // Reordered the list to show the most popular categories first
         const triviaApiCategories = [
             { id: 4, name: 'General Knowledge' },
             { id: 2, name: 'Film & TV' },
@@ -90,11 +86,14 @@ export default function SoloGamePage() {
         setCategories(triviaApiCategories);
     }, []);
 
+    /**
+     * Retrieves a batch of trivia questions from the public API using the selected filters.
+     * Populates local state with formatted question data for gameplay.
+     */
     const fetchQuestions = useCallback(async () => {
-        setIsLoading(true); // This line was missing in your file but should be here
+        setIsLoading(true);
         let apiUrl = `https://the-trivia-api.com/v2/questions?limit=10`;
 
-        // Use selectedCategory directly, since it's now the correct format
         if (selectedCategory) {
             apiUrl += `&categories=${selectedCategory}`;
         }
@@ -102,20 +101,16 @@ export default function SoloGamePage() {
         if (selectedDifficulty) {
             apiUrl += `&difficulties=${selectedDifficulty}`;
         }
-        // --- CHANGE 2: UPDATE HOW YOU PROCESS THE RESPONSE ---
         const data = (await fetch(apiUrl).then((res) => res.json())) as TriviaApiQuestion[];
-
-        // The data structure from The Trivia API is slightly different.
         const formattedQuestions = data.map((q) => {
             const allAnswers = [...q.incorrectAnswers, q.correctAnswer];
-            // Shuffle the answers
             allAnswers.sort(() => Math.random() - 0.5);
 
             return {
-                question: q.question.text, // Question is in a 'text' object
+                question: q.question.text,
                 difficulty: q.difficulty,
                 category: q.category,
-                correct_answer: q.correctAnswer, // Note the camelCase
+                correct_answer: q.correctAnswer,
                 incorrect_answers: q.incorrectAnswers,
                 all_answers: allAnswers,
             };
@@ -125,9 +120,11 @@ export default function SoloGamePage() {
         setIsLoading(false);
     }, [selectedCategory, selectedDifficulty]);
 
-    // --- Game Flow Handlers ---
+    /**
+     * Initializes a new solo game session by resetting score and question progress.
+     * Triggers the first question fetch based on the selected options.
+     */
     const handleStartGame = () => {
-        // Reset game state in case user restarts
         setScore(0);
         setQuestions([]);
         setCurrentQuestionIndex(0);
@@ -138,28 +135,40 @@ export default function SoloGamePage() {
         fetchQuestions();
     };
 
-    // **BUG FIX:** Reset selectedAnswer to null for the next round
+    /**
+     * Advances to the next question, prefetching more questions as the backlog depletes.
+     */
     const handleNextQuestion = () => {
         if (currentQuestionIndex >= questions.length - 3) fetchQuestions();
         setIsAnswered(false);
-        setSelectedAnswer(null); // Reset the selected answer
+        setSelectedAnswer(null);
         setCurrentQuestionIndex((prev) => prev + 1);
     };
 
+    /**
+     * Handles answer selection for the active question and persists solo stats when authenticated.
+     * @param answer - The answer option chosen by the player for the current question.
+     */
     const handleAnswerSelect = async (answer: string) => {
         if (isAnswered) return;
-        setSelectedAnswer(answer); // Set the selected answer
+        setSelectedAnswer(answer);
         setIsAnswered(true);
         const isCorrect = answer === questions[currentQuestionIndex].correct_answer;
         if (isCorrect) {
-            // Increment count of correct answers
             setScore((prevScore) => prevScore + 1);
         }
         if (user?.id) {
             const difficulty = questions[currentQuestionIndex].difficulty;
+            /**
+             * Records the outcome of the current solo question for analytics.
+             * Updates difficulty buckets and correctness counters for the logged-in user.
+             */
             await supabase.rpc('update_solo_stats', { p_user_id: String(user.id), p_diff: difficulty, p_correct: isCorrect });
         }
     };
+    /**
+     * Terminates the current game session and displays the summary screen.
+     */
     const handleEndGame = () => setIsGameOver(true);
 
     useEffect(() => {
@@ -174,9 +183,6 @@ export default function SoloGamePage() {
         }
     }, [isAnswered]);
 
-    // --- UI Rendering ---
-
-    // **Screen 1: Game Setup**
     if (!gameStarted) {
         const categoryOptions = [
             { value: '', label: 'Any Category' },
@@ -232,12 +238,7 @@ export default function SoloGamePage() {
                                         : 'bg-white/10 hover:bg-white/20';
 
                                     return (
-                                        <button
-                                            key={diff}
-                                            onClick={() => setSelectedDifficulty(key)}
-                                            // FIX: Added cursor-pointer for better UX
-                                            className={`p-3 rounded-md transition-colors cursor-pointer ${selectedClass}`}
-                                        >
+                                        <button key={diff} onClick={() => setSelectedDifficulty(key)} className={`p-3 rounded-md transition-colors cursor-pointer ${selectedClass}`}>
                                             {diff}
                                         </button>
                                     );
@@ -248,11 +249,7 @@ export default function SoloGamePage() {
                             <button onClick={() => router.push('/')} className="flex-1 h-14 rounded-md bg-gray-700 text-xl font-bold hover:bg-gray-800 cursor-pointer">
                                 Home
                             </button>
-                            <button
-                                onClick={handleStartGame}
-                                // FIX: Added bg-primary and cursor-pointer
-                                className="flex-1 h-14 rounded-md bg-green-800 text-xl font-bold hover:bg-green-900 cursor-pointer"
-                            >
+                            <button onClick={handleStartGame} className="flex-1 h-14 rounded-md bg-green-800 text-xl font-bold hover:bg-green-900 cursor-pointer">
                                 Start Game
                             </button>
                         </div>
@@ -263,7 +260,6 @@ export default function SoloGamePage() {
         );
     }
 
-    // **Screen 2: Game Over**
     if (isGameOver) {
         return (
             <>
@@ -296,9 +292,13 @@ export default function SoloGamePage() {
         );
     }
 
-    // **Screen 3: Active Game**
     const currentQuestion = questions[currentQuestionIndex];
 
+    /**
+     * Resolves button styling for answer options based on correctness and selection state.
+     * @param answer - Answer choice being rendered.
+     * @returns Tailwind-based class string conveying visual feedback.
+     */
     const getButtonClass = (answer: string) => {
         if (!isAnswered) return 'border-[#3C4F3C] bg-[#1A201A] hover:bg-[#253325] hover:border-primary';
         if (answer === currentQuestion.correct_answer) return 'border-green-500 bg-green-900';
@@ -306,6 +306,11 @@ export default function SoloGamePage() {
         return 'border-[#3C4F3C] bg-[#1A201A]';
     };
 
+    /**
+     * Normalizes API category labels into human-friendly display strings.
+     * @param apiCategory - Category identifier returned by the trivia API.
+     * @returns The formatted category label shown in the UI.
+     */
     const formatCategory = (apiCategory?: string) => {
         if (!apiCategory) return 'Mixed';
         const categoryMap: Record<string, string> = {
@@ -343,7 +348,6 @@ export default function SoloGamePage() {
                     <Spinner />
                 ) : (
                     <div ref={gameContainerRef} className="w-full max-w-4xl">
-                        {/* **FIX:** Re-added the full top bar with Main Menu button */}
                         <div className="mb-4 flex items-center gap-3 text-lg font-semibold">
                             {playerAvatar ? (
                                 <div className="relative w-12 h-12 rounded-full overflow-hidden">

@@ -13,6 +13,11 @@ type AlertContextType = {
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
 
+/**
+ * Manages ephemeral alert messages and exposes helpers to trigger or hide them.
+ * @param props - Children elements to render within the alert context.
+ * @returns JSX Provider for alert state management.
+ */
 export function AlertProvider({ children }: { children: ReactNode }) {
     const [alert, setAlert] = useState<AlertMessage | null>(null);
 
@@ -27,6 +32,10 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     return <AlertContext.Provider value={{ alert, showAlert, hideAlert }}>{children}</AlertContext.Provider>;
 }
 
+/**
+ * Accesses the alert context, ensuring proper provider usage.
+ * @returns Alert state and helper methods for showing or hiding messages.
+ */
 export function useAlert() {
     const context = useContext(AlertContext);
     if (!context) {

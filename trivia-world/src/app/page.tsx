@@ -1,14 +1,19 @@
-// app/page.tsx
 'use client';
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { socket } from '../lib/socket';
-import AuthModal from './components/AuthModal';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 
+const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
+
+/**
+ * Displays the landing page for Trivia World with entry points for solo and multiplayer modes.
+ * @returns The welcome screen interface with player identification and game actions.
+ */
 export default function WelcomePage() {
     const router = useRouter();
     const [name, setName] = useState('');
@@ -28,14 +33,18 @@ export default function WelcomePage() {
 
     const resolvedAvatar = profile?.avatar_url || null;
 
-    // Action 1: Play Solo
+    /**
+     * Routes the player to the solo gameplay flow after saving their display name.
+     */
     const handlePlaySolo = () => {
         const playerName = resolvePlayerName();
         sessionStorage.setItem('playerName', playerName);
         router.push('/solo');
     };
 
-    // Action 2: Create Multiplayer Game
+    /**
+     * Requests creation of a new multiplayer lobby and persists the chosen avatar/name.
+     */
     const handleCreateMultiplayerGame = () => {
         const playerName = resolvePlayerName();
         const player = {
@@ -46,7 +55,9 @@ export default function WelcomePage() {
         socket.emit('create-game', player);
     };
 
-    // Action 3: Join Multiplayer Game
+    /**
+     * Validates the lobby code and attempts to join an existing multiplayer game.
+     */
     const handleJoinMultiplayerGame = () => {
         const playerName = resolvePlayerName();
         const player = {
@@ -111,12 +122,10 @@ export default function WelcomePage() {
                     <h1 className="text-white text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tighter">Trivia World</h1>
                     <p className="text-white/80 text-md sm:text-lg max-w-2xl my-8">The ultimate trivia challenge. Choose your way to play.</p>
 
-                    {/* --- START: CONDITIONAL UI BLOCK --- */}
                     <div className="w-full max-w-md min-h-[5rem] mb-8 flex items-center justify-center">
                         {loading ? (
                             <p className="text-white/60">Loading...</p>
                         ) : user ? (
-                            // Logged-in user view
                             <div className="flex items-center gap-4 w-full p-3 rounded-md bg-white/5 border border-white/20">
                                 {profile?.avatar_url ? (
                                     <div className="relative w-12 h-12 rounded-full overflow-hidden">
@@ -133,7 +142,6 @@ export default function WelcomePage() {
                                 </div>
                             </div>
                         ) : (
-                            // Guest view
                             <input
                                 className="w-full h-14 px-6 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-primary"
                                 placeholder="Enter Your Name (Optional)"
@@ -144,7 +152,6 @@ export default function WelcomePage() {
                             />
                         )}
                     </div>
-                    {/* --- END: CONDITIONAL UI BLOCK --- */}
 
                     <div className="w-full max-w-md flex flex-col gap-4">
                         <button

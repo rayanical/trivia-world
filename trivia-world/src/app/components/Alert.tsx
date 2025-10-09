@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useAlert } from '@/context/AlertContext';
 
+/**
+ * Shows transient alert notifications from the global alert context.
+ * @returns An animated alert banner or null when no message is active.
+ */
 export default function Alert() {
     const { alert, hideAlert } = useAlert();
     const [isVisible, setIsVisible] = useState(false);

@@ -2,12 +2,14 @@
 import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import CustomSelect from '@/app/components/CustomSelect';
 import { socket } from '@/lib/socket';
-import AuthModal from '@/app/components/AuthModal';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import type { User } from '@supabase/supabase-js';
+
+const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
 
 type PlayerView = { id?: string; name: string; score?: number; answered?: boolean; avatar?: string | null };
 const CATEGORY_DISPLAY_MAP: Record<string, string> = {
@@ -32,9 +34,14 @@ type Question = {
     incorrect_answers?: string[];
     all_answers?: string[];
     timeLimit?: number | null;
-    endTime?: number | null; // Absolute end time for sync
+    endTime?: number | null;
 };
 
+/**
+ * Renders the multiplayer lobby and in-game experience for a trivia match.
+ * Coordinates socket events, player state, and host controls for the session.
+ * @returns The multiplayer lobby or active game interface.
+ */
 export default function LobbyPage() {
     const params = useParams();
     const router = useRouter();
@@ -54,7 +61,6 @@ export default function LobbyPage() {
     const [isRevealPhase, setIsRevealPhase] = useState(false);
     const timerRef = useRef<number | null>(null);
     const revealTimerRef = useRef<number | null>(null);
-    // Failsafe recovery timer: if we miss a question or transition, this will ask the server for state
     const recoveryTimerRef = useRef<number | null>(null);
 
     const selectedAnswerRef = useRef<string | null>(null);
@@ -68,6 +74,11 @@ export default function LobbyPage() {
 
     const maxPlayers = 8;
 
+    /**
+     * Converts trivia API category tokens into user-friendly display names.
+     * @param apiCategory - Category identifier received from the backend or API.
+     * @returns Normalized category label for presentation in the UI.
+     */
     const formatCategory = (apiCategory?: string) => {
         if (!apiCategory) return 'Mixed';
         const normalized = apiCategory.toLowerCase().replace(/ /g, '_');
@@ -87,7 +98,6 @@ export default function LobbyPage() {
         currentQuestionRef.current = currentQuestion;
     }, [currentQuestion]);
 
-    // Enforce 15 character limit on player names
     useEffect(() => {
         const currentPlayerName = typeof window !== 'undefined' ? sessionStorage.getItem('playerName') : null;
         if (currentPlayerName && currentPlayerName.length > 15) {
@@ -97,7 +107,6 @@ export default function LobbyPage() {
     }, []);
 
     useEffect(() => {
-        // Set categories for The Trivia API
         const triviaApiCategories = [
             { id: 4, name: 'General Knowledge' },
             { id: 2, name: 'Film & TV' },
@@ -143,7 +152,7 @@ export default function LobbyPage() {
                 setInGame(true);
                 setCurrentQuestion(payload.question);
                 setTimeLeft(payload.question.endTime ? Math.max(0, Math.ceil((payload.question.endTime - Date.now()) / 1000)) : 0);
-                setSelectedAnswer((prev) => payload.myAnswer ?? prev); // Preserve local if server state is nullish
+                setSelectedAnswer((prev) => payload.myAnswer ?? prev);
             }
         };
         const onQuestionEnded = async (payload: { players?: PlayerView[]; correctAnswer?: string; transitionEnd?: number }) => {
@@ -208,24 +217,15 @@ export default function LobbyPage() {
                 recoveryTimerRef.current = null;
             }, 5000) as unknown as number;
 
-            console.log('Full question end debug:', {
-                userId: userRef.current?.id ?? null,
-                hasSelectedAnswer: !!selectedAnswerRef.current,
-                selectedAnswer: selectedAnswerRef.current,
-                difficulty: currentQuestionRef.current?.difficulty,
-                correctAnswer: payload.correctAnswer,
-                isCorrect: selectedAnswerRef.current && payload.correctAnswer ? selectedAnswerRef.current === payload.correctAnswer : null,
-                currentQuestionFull: currentQuestionRef.current, // Full object to inspect
-            });
-
-            // Update multiplayer question stats if user answered and is authenticated
             if (userRef.current && selectedAnswerRef.current && currentQuestionRef.current?.difficulty && payload.correctAnswer) {
-                console.log('Attempting stats update with user:', userRef.current); // Additional log for debugging auth
-
                 const u = userRef.current as { id: string };
                 const isCorrect = selectedAnswerRef.current === payload.correctAnswer;
                 const difficulty = currentQuestionRef.current.difficulty.toLowerCase();
                 try {
+                    /**
+                     * Persists per-question multiplayer performance for the authenticated player.
+                     * Tracks difficulty-specific correctness to power post-game analytics.
+                     */
                     const { error } = await supabase.rpc('update_multiplayer_question_stats', { p_user_id: u.id, p_diff: difficulty, p_correct: isCorrect });
                     if (error) console.error('Error updating question stats:', error);
                 } catch (err) {
@@ -255,30 +255,27 @@ export default function LobbyPage() {
                 revealTimerRef.current = null;
             }
 
-            // Update multiplayer game stats if authenticated
             if (userRef.current && payload.players && payload.players.length > 0) {
-                // ← Use userRef.current
-                console.log('Attempting game stats update with user:', userRef.current); // Add log
                 const u = userRef.current as { id: string };
-                const currentPlayerName = sessionStorage.getItem('playerName') || ''; // Fallback
+                const currentPlayerName = sessionStorage.getItem('playerName') || '';
                 const myPlayer = payload.players.find((p) => p.name === currentPlayerName);
                 if (myPlayer) {
                     const myScore = myPlayer.score || 0;
                     const maxScore = Math.max(...payload.players.map((p) => p.score || 0));
                     const won = myScore >= maxScore;
-                    console.log('Game RPC params:', { userId: u.id, won, myScore, maxScore }); // Add log
                     try {
+                        /**
+                         * Records aggregated multiplayer game results for the authenticated player.
+                         * Updates win/loss totals based on the match outcome.
+                         */
                         const { error } = await supabase.rpc('update_multiplayer_game_stats', { p_user_id: u.id, p_won: won });
-                        console.log('Game RPC response:', { error }); // Add log
                         if (error) console.error('Error updating game stats:', error);
                     } catch (err) {
                         console.error('Unexpected error updating game stats:', err);
                     }
                 } else {
-                    console.warn('No matching player found for stats update:', currentPlayerName); // Add warn
+                    console.warn('No matching player found for stats update:', currentPlayerName);
                 }
-            } else {
-                console.log('Skipping game stats: no user or players'); // Add log
             }
         };
 
@@ -289,7 +286,6 @@ export default function LobbyPage() {
         socket.on('question-ended', onQuestionEnded);
         socket.on('game-over', onGameOver);
 
-        // New: Handle reconnection by resyncing state
         const onReconnect = () => {
             if (gameCode) {
                 socket.emit('get-state', gameCode);
@@ -318,7 +314,6 @@ export default function LobbyPage() {
         };
     }, [gameCode]);
 
-    // New: Resync when tab becomes visible (but not during transition)
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (!document.hidden && gameCode && !isTransitioning) {
@@ -329,7 +324,6 @@ export default function LobbyPage() {
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [gameCode, isTransitioning]);
 
-    // Request current players when mounted
     useEffect(() => {
         if (gameCode) {
             socket.emit('get-players', gameCode);
@@ -337,7 +331,6 @@ export default function LobbyPage() {
         }
     }, [gameCode]);
 
-    // Countdown timer: Recalculate based on endTime to handle throttling
     useEffect(() => {
         if (isRevealPhase) return;
         if (!currentQuestion?.endTime || timeLeft <= 0) {
@@ -353,7 +346,6 @@ export default function LobbyPage() {
                 const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
                 setTimeLeft(remaining);
                 if (remaining <= 0) {
-                    // Optional: Trigger recovery if timer expires locally but no question-ended received
                     if (gameCode) {
                         socket.emit('get-state', gameCode);
                     }
@@ -371,6 +363,10 @@ export default function LobbyPage() {
     const currentPlayerName = typeof window !== 'undefined' ? sessionStorage.getItem('playerName') : null;
     const isHost = players.length > 0 && players[0].name === currentPlayerName;
 
+    /**
+     * Emits a request to start the game when the host finalizes lobby settings.
+     * Applies selected category, difficulty, and time limit options.
+     */
     const handleStart = () => {
         if (!isHost || !gameCode) return;
         const settings = {
@@ -382,14 +378,21 @@ export default function LobbyPage() {
         socket.emit('start-game', { gameCode, settings });
     };
 
+    /**
+     * Sends the player's selected answer to the server for the active question.
+     * Prevents duplicate submissions and ignores expired questions.
+     * @param answer - Option chosen by the current player.
+     */
     const handleSubmitAnswer = (answer: string) => {
         if (!gameCode || currentQuestion?.index == null || (currentQuestion?.timeLimit && timeLeft <= 0)) return;
-        if (selectedAnswer) return; // prevent re-clicks
+        if (selectedAnswer) return;
         setSelectedAnswer(answer);
-        console.log('Answer set and emitted:', { answer, questionIndex: currentQuestion?.index, timeLeft });
         socket.emit('submit-answer', { gameCode, answer, questionIndex: currentQuestion.index });
     };
 
+    /**
+     * Leaves the current multiplayer session and returns the user to the landing page.
+     */
     const handleLeave = () => {
         if (gameCode) socket.emit('leave-game', { gameCode });
         router.push('/');
@@ -410,7 +413,6 @@ export default function LobbyPage() {
             <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
             {!inGame ? (
                 <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center justify-center gap-8 p-4">
-                    {/* Left spacer for symmetry */}
                     <div className="hidden lg:block w-64 flex-shrink-0" />
 
                     {/* Centered setup */}
