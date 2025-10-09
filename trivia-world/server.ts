@@ -54,7 +54,9 @@ type TriviaApiQuestionResponse = {
 
 const app = express();
 app.use(cors());
-
+app.get('/', (req, res) => {
+    res.send('Trivia World Backend is running!');
+});
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
