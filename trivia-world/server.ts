@@ -58,12 +58,11 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: 'http://localhost:3000', // Your Next.js app URL
+        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
         methods: ['GET', 'POST'],
     },
     pingTimeout: 60000,
 });
-
 // In-memory storage for game states using a typed record
 const games: Record<string, Game> = {};
 
@@ -506,7 +505,7 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.info(`🚀 Trivia server running on port ${PORT}`);
 });
