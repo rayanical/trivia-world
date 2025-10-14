@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import PasswordValidator from '@/app/components/PasswordValidator';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useAlert } from '@/context/AlertContext';
@@ -31,6 +32,7 @@ export default function ResetPasswordPage() {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<string | null>('Verifying your request...');
+    const [isTokenValid, setIsTokenValid] = useState(false);
 
     useEffect(() => {
         const hash = window.location.hash;
@@ -40,8 +42,10 @@ export default function ResetPasswordPage() {
         if (!accessToken) {
             setError('Invalid or expired password reset link.');
             setMessage(null);
+            setIsTokenValid(false);
         } else {
             setMessage('You can now reset your password.');
+            setIsTokenValid(true);
         }
     }, []);
 
@@ -89,27 +93,34 @@ export default function ResetPasswordPage() {
 
                     {!error && (
                         <>
-                            <input
-                                type="password"
-                                placeholder="Enter your new password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-                            />
-                            <input
-                                type="password"
-                                placeholder="Confirm your new password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="w-full mb-6 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-                            />
-                            <button
-                                onClick={handleResetPassword}
-                                disabled={loading || !password || !confirmPassword}
-                                className="w-full p-3 rounded-lg bg-green-700 hover:bg-green-800 text-white font-bold disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-lg"
-                            >
-                                {loading ? 'Updating...' : 'Update Password'}
-                            </button>
+                            {isTokenValid ? (
+                                <>
+                                    <input
+                                        type="password"
+                                        placeholder="Enter your new password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                                    />
+                                    <PasswordValidator password={password} />
+                                    <input
+                                        type="password"
+                                        placeholder="Confirm your new password"
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        className="w-full mb-6 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                                    />
+                                    <button
+                                        onClick={handleResetPassword}
+                                        disabled={loading || !password || !confirmPassword}
+                                        className="w-full p-3 rounded-lg bg-green-700 hover:bg-green-800 text-white font-bold disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-lg"
+                                    >
+                                        {loading ? 'Updating...' : 'Update Password'}
+                                    </button>
+                                </>
+                            ) : (
+                                <p className="text-center text-red-400">Invalid or expired reset link.</p>
+                            )}
                         </>
                     )}
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PasswordValidator from './PasswordValidator';
 import { supabase } from '@/lib/supabaseClient';
 import { useAlert } from '@/context/AlertContext';
 
@@ -157,6 +158,8 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
                 />
+                {isSignup && <PasswordValidator password={password} />}
+
                 {isSignup && (
                     <input
                         type="text"
