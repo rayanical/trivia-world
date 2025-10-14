@@ -286,7 +286,7 @@ export default function ProfilePage() {
                             ) : authProfile?.avatar_url ? (
                                 <Image src={authProfile.avatar_url} alt="avatar" width={112} height={112} className="object-cover" />
                             ) : (
-                                <Image src="/file.svg" alt="default avatar" width={112} height={112} className="object-cover" />
+                                <Image src="/file.svg" alt="default avatar" width={112} height={112} className="object-cover object-center transform scale-80" />
                             )}
                         </div>
                         <input
