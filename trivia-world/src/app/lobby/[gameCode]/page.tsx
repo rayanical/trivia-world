@@ -8,6 +8,39 @@ import { socket } from '@/lib/socket';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import type { User } from '@supabase/supabase-js';
+import type { Metadata } from 'next';
+
+export async function generateMetadata({ params }: { params: { gameCode: string } }): Promise<Metadata> {
+    const gameCode = params.gameCode;
+    const title = `Join my Trivia World game!`;
+    const description = `Click the link to join the lobby. Game Code: ${gameCode}`;
+    const imageUrl = 'https://triviaworld.live/og-lobby-image.png';
+
+    return {
+        title: `Join Trivia World Game: ${gameCode}`,
+        description,
+        openGraph: {
+            title,
+            description,
+            type: 'website',
+            url: `https://triviaworld.live/lobby/${gameCode}`,
+            images: [
+                {
+                    url: imageUrl,
+                    width: 1200,
+                    height: 630,
+                    alt: 'Trivia World Lobby',
+                },
+            ],
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title,
+            description,
+            images: [imageUrl],
+        },
+    };
+}
 
 const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
 
@@ -49,30 +82,6 @@ export default function LobbyPage() {
     const [players, setPlayers] = useState<PlayerView[]>([]);
     const [hasAttemptedJoin, setHasAttemptedJoin] = useState(false);
     const [guestName, setGuestName] = useState('');
-
-    useEffect(() => {
-        if (gameCode) {
-            // Update meta tags for link previews
-            document.title = `Join Trivia World Game: ${gameCode}`;
-
-            const metaTags = [
-                { property: 'og:title', content: `Join my Trivia World game!` },
-                { property: 'og:description', content: `Click the link to join the lobby. Game Code: ${gameCode}` },
-                { property: 'og:url', content: window.location.href },
-                { property: 'og:image', content: 'https://triviaworld.live/og-lobby-image.png' }, // A different image for lobby invites
-            ];
-
-            metaTags.forEach((tagInfo) => {
-                let meta = document.head.querySelector(`meta[property='${tagInfo.property}']`) as HTMLMetaElement;
-                if (!meta) {
-                    meta = document.createElement('meta');
-                    meta.setAttribute('property', tagInfo.property);
-                    document.head.appendChild(meta);
-                }
-                meta.setAttribute('content', tagInfo.content);
-            });
-        }
-    }, [gameCode]);
 
     // Read browser-only sessionStorage after hydration to determine host/guest state
     useEffect(() => {

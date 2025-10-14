@@ -210,9 +210,14 @@ export default function ProfilePage() {
                 return;
             }
             /**
-             * Initiates Supabase Auth password recovery for the supplied email address.
+             * Initiates Supabase Auth password recovery.
+             * The `redirectTo` option tells Supabase the exact URL
+             * for the button in the password reset email.
              */
-            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
+            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: `${window.location.origin}/reset-password`,
+            });
+
             if (resetError) throw resetError;
             showAlert('Password reset email sent!', 'success');
         } catch (err) {

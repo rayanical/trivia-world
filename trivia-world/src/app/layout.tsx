@@ -36,6 +36,12 @@ export const metadata: Metadata = {
             },
         ],
     },
+    twitter: {
+        card: 'summary_large_image',
+        title: 'Trivia World',
+        description: 'Challenge your friends in real-time trivia!',
+        images: ['https://triviaworld.live/og-image.png'],
+    },
 };
 
 /**
