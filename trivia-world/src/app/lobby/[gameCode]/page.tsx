@@ -47,8 +47,49 @@ export default function LobbyPage() {
     const router = useRouter();
     const gameCode = params.gameCode;
     const [players, setPlayers] = useState<PlayerView[]>([]);
+    const [hasAttemptedJoin, setHasAttemptedJoin] = useState(false);
+    const [guestName, setGuestName] = useState('');
+
+    useEffect(() => {
+        if (gameCode) {
+            // Update meta tags for link previews
+            document.title = `Join Trivia World Game: ${gameCode}`;
+
+            const metaTags = [
+                { property: 'og:title', content: `Join my Trivia World game!` },
+                { property: 'og:description', content: `Click the link to join the lobby. Game Code: ${gameCode}` },
+                { property: 'og:url', content: window.location.href },
+                { property: 'og:image', content: 'https://triviaworld.live/og-lobby-image.png' }, // A different image for lobby invites
+            ];
+
+            metaTags.forEach((tagInfo) => {
+                let meta = document.head.querySelector(`meta[property='${tagInfo.property}']`) as HTMLMetaElement;
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.setAttribute('property', tagInfo.property);
+                    document.head.appendChild(meta);
+                }
+                meta.setAttribute('content', tagInfo.content);
+            });
+        }
+    }, [gameCode]);
+
+    // Read browser-only sessionStorage after hydration to determine host/guest state
+    useEffect(() => {
+        const isHost = typeof window !== 'undefined' && sessionStorage.getItem('isCreatingGame') === 'true';
+        if (isHost) {
+            setHasAttemptedJoin(true);
+            sessionStorage.removeItem('isCreatingGame');
+        }
+
+        // Pre-fill guest name if it exists
+        if (typeof window !== 'undefined') {
+            setGuestName(sessionStorage.getItem('playerName') || '');
+        }
+    }, []);
+
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
     const [category, setCategory] = useState<string>('');
     const [difficulty, setDifficulty] = useState<string>('');
@@ -70,6 +111,8 @@ export default function LobbyPage() {
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [revealedAnswer, setRevealedAnswer] = useState<string | null>(null);
     const [everyoneAnswered, setEveryoneAnswered] = useState(false);
+    const [showGameOver, setShowGameOver] = useState(false);
+    const [winner, setWinner] = useState<PlayerView | null>(null);
     const [isTransitioning, setIsTransitioning] = useState(false);
 
     const maxPlayers = 8;
@@ -106,6 +149,24 @@ export default function LobbyPage() {
         }
     }, []);
 
+    // Handle automatic joining for logged-in users
+    useEffect(() => {
+        // This effect runs when the component mounts or when user/profile changes (e.g., after login).
+        if (gameCode && user && profile && !hasAttemptedJoin) {
+            const playerIsAlreadyInLobby = players.some((p) => p.name === profile.username);
+
+            if (!playerIsAlreadyInLobby && players.length < maxPlayers) {
+                const player = {
+                    name: profile.username,
+                    avatar: profile.avatar_url,
+                };
+                sessionStorage.setItem('playerName', player.name || '');
+                socket.emit('join-game', { gameCode, player });
+                setHasAttemptedJoin(true);
+            }
+        }
+    }, [gameCode, user, profile, hasAttemptedJoin, players, maxPlayers]);
+
     useEffect(() => {
         const triviaApiCategories = [
             { id: 4, name: 'General Knowledge' },
@@ -137,6 +198,8 @@ export default function LobbyPage() {
             setRevealedAnswer(null);
             setIsTransitioning(false);
             setIsRevealPhase(false);
+            setShowGameOver(false);
+            setWinner(null);
             setInGame(true);
             setCurrentQuestion(q);
             setTimeLeft(q.endTime ? Math.max(0, Math.ceil((q.endTime - Date.now()) / 1000)) : 0);
@@ -238,9 +301,21 @@ export default function LobbyPage() {
             setEveryoneAnswered(true);
         };
         const onGameOver = async (payload: { players?: PlayerView[] }) => {
-            setPlayers(payload.players || []);
+            if (payload.players) {
+                setPlayers(payload.players);
+                if (payload.players.length > 0) {
+                    const sortedPlayers = [...payload.players].sort((a, b) => (b.score || 0) - (a.score || 0));
+                    setWinner(sortedPlayers[0]);
+                } else {
+                    setWinner(null);
+                }
+            } else {
+                setPlayers([]);
+                setWinner(null);
+            }
             setInGame(false);
             setCurrentQuestion(null);
+            setShowGameOver(true);
             setTimeLeft(0);
             setSelectedAnswer(null);
             setRevealedAnswer(null);
@@ -397,6 +472,115 @@ export default function LobbyPage() {
         if (gameCode) socket.emit('leave-game', { gameCode });
         router.push('/');
     };
+
+    const handleStayInLobby = () => {
+        setShowGameOver(false);
+        setWinner(null);
+    };
+
+    const handleGuestJoin = () => {
+        if (guestName.trim()) {
+            sessionStorage.setItem('playerName', guestName.trim());
+            const player = {
+                name: guestName.trim(),
+                avatar: null,
+            };
+            socket.emit('join-game', { gameCode, player });
+            setHasAttemptedJoin(true);
+        }
+    };
+
+    // This condition now correctly handles all cases
+    const needsToJoin = !user && !hasAttemptedJoin;
+
+    if (needsToJoin) {
+        return (
+            <div className="flex h-screen flex-col items-center justify-center bg-[#101710] text-white p-4">
+                <div className="w-full max-w-md space-y-6">
+                    <h1 className="text-4xl font-bold text-center">Join Lobby</h1>
+                    <p className="text-center text-white/80">
+                        Enter your name to join game: <span className="font-bold text-green-400">{gameCode}</span>
+                    </p>
+
+                    <input
+                        className="w-full h-14 px-6 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-green-800"
+                        placeholder="Enter Your Name"
+                        type="text"
+                        maxLength={15}
+                        value={guestName}
+                        onChange={(e) => setGuestName(e.target.value)}
+                        onKeyPress={(e) => {
+                            if (e.key === 'Enter' && guestName.trim()) {
+                                handleGuestJoin();
+                            }
+                        }}
+                    />
+
+                    <button
+                        onClick={handleGuestJoin}
+                        disabled={!guestName.trim()}
+                        className="w-full h-14 rounded-md bg-green-800 hover:bg-green-900 text-white text-xl font-bold disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                    >
+                        Join Game
+                    </button>
+
+                    <button onClick={() => router.push('/')} className="w-full h-12 rounded-md bg-gray-700 hover:bg-gray-800 text-white font-bold cursor-pointer transition-colors">
+                        Back to Home
+                    </button>
+
+                    <div className="flex items-center gap-4 my-6">
+                        <hr className="flex-grow border-white/20" />
+                        <span className="text-white/60 text-sm">OR</span>
+                        <hr className="flex-grow border-white/20" />
+                    </div>
+
+                    <button
+                        onClick={() => setIsAuthModalOpen(true)}
+                        className="w-full h-12 rounded-md bg-blue-800 hover:bg-blue-900 text-white font-bold cursor-pointer transition-colors"
+                    >
+                        Login/Signup
+                    </button>
+                </div>
+                <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+            </div>
+        );
+    }
+
+    if (showGameOver) {
+        const currentPlayer = players.find((p) => p.name === currentPlayerName);
+        return (
+            <div className="flex h-screen flex-col items-center justify-center bg-[#1A201A] text-white p-4">
+                <h1 className="text-4xl font-bold mb-4">Game Over!</h1>
+                {winner && (
+                    <div className="text-center">
+                        <h2 className="text-2xl mb-4">Winner:</h2>
+                        {winner.avatar ? (
+                            <Image src={winner.avatar} alt={winner.name} width={128} height={128} className="rounded-full mx-auto mb-4" />
+                        ) : (
+                            <div className="w-32 h-32 rounded-full bg-green-800 flex items-center justify-center text-5xl font-bold mx-auto mb-4">
+                                {(winner.name?.charAt(0) ?? '?').toUpperCase()}
+                            </div>
+                        )}
+                        <p className="text-3xl font-bold text-green-400">{winner.name}</p>
+                    </div>
+                )}
+                {currentPlayer && winner && currentPlayer.name !== winner.name && (
+                    <div className="mt-8 text-center">
+                        <h3 className="text-xl">Your Stats:</h3>
+                        <p>Score: {currentPlayer.score}</p>
+                    </div>
+                )}
+                <div className="flex gap-4 mt-8">
+                    <button onClick={handleStayInLobby} className="px-8 py-3 rounded-full bg-blue-700 hover:bg-blue-800 text-lg font-bold cursor-pointer">
+                        Stay in Lobby
+                    </button>
+                    <button onClick={handleLeave} className="px-8 py-3 rounded-full bg-gray-700 hover:bg-gray-800 text-lg font-bold cursor-pointer">
+                        Leave Lobby
+                    </button>
+                </div>
+            </div>
+        );
+    }
     return (
         <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white relative">
             <div className="absolute top-4 right-4 z-10">
@@ -525,7 +709,7 @@ export default function LobbyPage() {
                                 <ul className="space-y-2">
                                     {players.map((p) => (
                                         <li
-                                            key={p.name}
+                                            key={p.id || p.name}
                                             className="bg-white/5 backdrop-blur-sm p-2.5 rounded-lg font-medium text-sm border border-white/10 flex items-center justify-center gap-3"
                                         >
                                             {p.avatar ? (
@@ -537,7 +721,7 @@ export default function LobbyPage() {
                                                     {(p.name?.charAt(0) ?? '?').toUpperCase()}
                                                 </div>
                                             )}
-                                            <span>{p.name}</span>
+                                            <span className={p.name === currentPlayerName ? 'text-[#22c55e] font-bold' : ''}>{p.name}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -631,7 +815,7 @@ export default function LobbyPage() {
                                 {[...players]
                                     .sort((a, b) => (b.score || 0) - (a.score || 0))
                                     .map((p, index) => (
-                                        <div key={p.name} className="bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 flex items-center gap-3">
+                                        <div key={p.id || p.name} className="bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 flex items-center gap-3">
                                             <span className="font-bold text-lg w-6 text-center">{index + 1}</span>
                                             {p.avatar ? (
                                                 <div className="relative w-10 h-10 rounded-full overflow-hidden">
@@ -643,7 +827,7 @@ export default function LobbyPage() {
                                                 </div>
                                             )}
                                             <div className="flex-1">
-                                                <span className="font-medium text-sm truncate block">{p.name}</span>
+                                                <span className={`font-medium text-sm truncate block ${p.name === currentPlayerName ? 'text-[#22c55e] font-bold' : ''}`}>{p.name}</span>
                                                 <span className="text-green-400 font-bold text-xs">{p.score || 0} pts</span>
                                             </div>
                                         </div>

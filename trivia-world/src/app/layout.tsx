@@ -6,6 +6,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { AlertProvider } from '@/context/AlertContext';
 import Alert from './components/Alert';
 import { Analytics } from '@vercel/analytics/next';
+import Footer from './components/Footer';
 
 const spaceGrotesk = Space_Grotesk({
     subsets: ['latin'],
@@ -21,6 +22,20 @@ const notoSans = Noto_Sans({
 export const metadata: Metadata = {
     title: 'Trivia World',
     description: 'Challenge your friends in real-time trivia!',
+    openGraph: {
+        title: 'Trivia World',
+        description: 'Challenge your friends in real-time trivia!',
+        type: 'website',
+        url: 'https://triviaworld.live',
+        images: [
+            {
+                url: 'https://triviaworld.live/og-image.png',
+                width: 1200,
+                height: 630,
+                alt: 'Trivia World Logo',
+            },
+        ],
+    },
 };
 
 /**
@@ -34,19 +49,19 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="en">
+        <html lang="en" className="h-full">
             <head>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 {/* For Google Icons used in mockups */}
                 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&display=switch" rel="stylesheet" />
             </head>
-            <body className={`${spaceGrotesk.variable} ${notoSans.variable} font-sans bg-background text-text-primary`}>
+            <body className={`${spaceGrotesk.variable} ${notoSans.variable} font-sans bg-background text-text-primary flex flex-col min-h-full`}>
                 <AlertProvider>
                     <AuthProvider>
-                        {children}
+                        <main className="flex-auto">{children}</main>
                         <Analytics />
-
                         <Alert />
+                        <Footer />
                     </AuthProvider>
                 </AlertProvider>
             </body>

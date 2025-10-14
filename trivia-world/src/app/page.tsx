@@ -52,6 +52,10 @@ export default function WelcomePage() {
             avatar: resolvedAvatar,
         };
         sessionStorage.setItem('playerName', player.name);
+
+        // Flag that this user is creating the game (host)
+        sessionStorage.setItem('isCreatingGame', 'true');
+
         socket.emit('create-game', player);
     };
 
