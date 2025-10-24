@@ -558,25 +558,31 @@ export default function LobbyPage() {
         );
     }
     return (
-        <div className="flex h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white relative">
-            <div className="absolute top-4 right-4 z-10">
+        <div className="flex min-h-screen flex-col items-center justify-start lg:justify-center bg-[#101710] px-4 pb-24 pt-16 lg:pt-4 lg:px-4 lg:pb-4 text-white relative">
+            <div className="absolute top-4 right-4 z-10 p-2 lg:p-0">
                 {user ? (
-                    <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
+                    <button
+                        onClick={() => router.push('/profile')}
+                        className="px-3 py-2 text-sm font-semibold rounded-md bg-blue-800 hover:bg-blue-900 text-white transition-colors cursor-pointer"
+                    >
                         Profile
                     </button>
                 ) : (
-                    <button onClick={() => setIsAuthModalOpen(true)} className="bg-green-800 hover:bg-green-900 p-2 rounded-md text-white cursor-pointer transition-colors">
+                    <button
+                        onClick={() => setIsAuthModalOpen(true)}
+                        className="px-3 py-2 text-sm font-semibold rounded-md bg-green-800 hover:bg-green-900 text-white transition-colors cursor-pointer"
+                    >
                         Login/Signup
                     </button>
                 )}
             </div>
             <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
             {!inGame ? (
-                <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center justify-center gap-8 p-4">
+                <div className="w-full max-w-7xl flex flex-col lg:flex-row items-stretch lg:items-center justify-start lg:justify-center gap-6 lg:gap-8 pt-4 lg:pt-0 lg:p-8">
                     <div className="hidden lg:block w-64 flex-shrink-0" />
 
                     {/* Centered setup */}
-                    <div className="w-full max-w-md space-y-6 flex-shrink-0">
+                    <div className="w-full max-w-md space-y-4 sm:space-y-6 flex-shrink-0 order-1 lg:order-none">
                         <h1 className="text-4xl font-bold mb-2 text-center">Game Code: {gameCode}</h1>
                         <p className="text-lg mb-4 text-center">
                             Players ({players.length}/{maxPlayers})
@@ -601,7 +607,7 @@ export default function LobbyPage() {
                                 </div>
                                 <div>
                                     <label className="block mb-2 font-bold">Difficulty</label>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-2 gap-3">
                                         {[
                                             { key: 'easy', label: 'Easy' },
                                             { key: 'medium', label: 'Medium' },
@@ -659,10 +665,16 @@ export default function LobbyPage() {
                                     )}
                                 </div>
                                 <div className="flex gap-4">
-                                    <button onClick={handleLeave} className="flex-1 h-14 rounded-md bg-gray-700 text-xl font-bold hover:bg-gray-800 cursor-pointer">
+                                    <button
+                                        onClick={handleLeave}
+                                        className="flex-1 h-12 sm:h-14 rounded-md bg-gray-700 text-base sm:text-xl font-bold hover:bg-gray-800 cursor-pointer"
+                                    >
                                         Home
                                     </button>
-                                    <button onClick={handleStart} className="flex-1 h-14 rounded-md bg-green-800 text-xl font-bold hover:bg-green-900 cursor-pointer">
+                                    <button
+                                        onClick={handleStart}
+                                        className="flex-1 h-12 sm:h-14 rounded-md bg-green-800 text-base sm:text-xl font-bold hover:bg-green-900 cursor-pointer"
+                                    >
                                         Start Game
                                     </button>
                                 </div>
@@ -678,10 +690,10 @@ export default function LobbyPage() {
                     </div>
 
                     {/* Sleek players panel on the right with equal spacing */}
-                    <div className="w-full max-w-md lg:w-64 flex-shrink-0 order-first lg:order-last">
+                    <div className="w-full max-w-md lg:max-w-xs lg:w-72 flex-shrink-0 order-2 lg:order-last">
                         <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] rounded-xl p-5 shadow-2xl border border-green-900/30">
                             <h3 className="text-lg font-bold mb-3 text-center text-green-400">Players</h3>
-                            <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                            <div className="max-h-60 lg:max-h-96 overflow-y-auto custom-scrollbar">
                                 <ul className="space-y-2">
                                     {players.map((p) => (
                                         <li
@@ -713,12 +725,17 @@ export default function LobbyPage() {
                         </div>
                     )}
 
-                    <div className="mb-4 flex flex-wrap justify-between items-center gap-2 text-xl font-bold">
-                        <button onClick={handleLeave} className="text-sm bg-gray-700 hover:bg-gray-800 px-4 py-2 rounded-md cursor-pointer">
+                    <div className="mb-4 flex flex-col lg:flex-row flex-wrap justify-between items-center gap-2 text-xl font-bold">
+                        <button
+                            onClick={handleLeave}
+                            className="order-1 lg:order-none text-xs lg:text-sm bg-gray-700 hover:bg-gray-800 px-3 py-1.5 lg:px-4 lg:py-2 rounded-md cursor-pointer self-start lg:self-center"
+                        >
                             Leave Game
                         </button>
-                        <span>Game Code: {gameCode}</span>
-                        <div className="text-sm">Players: {players.length}</div>
+                        <span className="order-2 lg:order-none text-center lg:text-left text-white/80">
+                            Game Code: <span className="text-white font-bold">{gameCode}</span>
+                        </span>
+                        <div className="order-3 lg:order-none text-xs lg:text-sm text-white/60">Players: {players.length}</div>
                     </div>
                     <div className="rounded-xl p-4 sm:p-6 bg-[#253325] w-full">
                         <div className="flex justify-between items-center mb-4">
