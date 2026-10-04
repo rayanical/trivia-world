@@ -42,5 +42,8 @@
     "db:migrate": "bun run scripts/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests"
+  },
+  "overrides": {
+    "postcss": "8.5.28"
   }
 }

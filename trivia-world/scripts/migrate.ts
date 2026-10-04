@@ -1,6 +1,7 @@
 import { getMigrations } from 'better-auth/db/migration';
 import { createHash } from 'node:crypto';
 import { requiredEnv } from '../src/server/config';
+import { connectWithRetry } from '../src/server/connect-with-retry';
 
 // Session-level migration locks need a direct connection, not transaction pooling.
 const migrationUrl = new URL(process.env.DATABASE_URL_UNPOOLED || requiredEnv('DATABASE_URL'));
@@ -10,7 +11,7 @@ if (migrationUrl.hostname.endsWith('.neon.tech')) {
 process.env.DATABASE_URL = migrationUrl.toString();
 const [{ auth }, { db }] = await Promise.all([import('../src/server/auth'), import('../src/server/db')]);
 
-const client = await db.connect();
+const client = await connectWithRetry(() => db.connect());
 try {
     // Serialize deployments so two instances cannot modify the schema at once.
     await client.query("SELECT pg_advisory_lock(hashtext('trivia-world-migrations'))");

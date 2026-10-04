@@ -1,31 +1,29 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAlert } from '@/context/AlertContext';
+import { useAlert, useAlertMessage } from '@/context/AlertContext';
 
 /**
  * Shows transient alert notifications from the global alert context.
  * @returns An animated alert banner or null when no message is active.
  */
 export default function Alert() {
-    const { alert, hideAlert } = useAlert();
-    const [isVisible, setIsVisible] = useState(false);
+    const { hideAlert } = useAlert();
+    const alert = useAlertMessage();
+    const [exitingAlert, setExitingAlert] = useState<typeof alert>(null);
+    const isVisible = alert !== exitingAlert;
 
     useEffect(() => {
         if (alert) {
-            setIsVisible(true);
-            const timer = setTimeout(() => {
-                setIsVisible(false);
-                setTimeout(hideAlert, 300);
-            }, 3000);
-
-            return () => clearTimeout(timer);
+            const exitTimer = setTimeout(() => setExitingAlert(alert), 3000);
+            const hideTimer = setTimeout(hideAlert, 3300);
+            return () => { clearTimeout(exitTimer); clearTimeout(hideTimer); };
         }
     }, [alert, hideAlert]);
 
     if (!alert) return null;
 
-    const baseStyle = 'fixed top-5 right-5 max-w-[calc(100vw-2.5rem)] p-4 rounded-lg shadow-lg text-white transition-all duration-300 ease-in-out z-50';
+    const baseStyle = 'fixed top-5 right-5 max-w-[calc(100vw-2.5rem)] p-4 rounded-lg shadow-lg text-white z-50';
     const visibilityStyle = isVisible ? 'animate-slide-in' : 'animate-slide-out';
 
     let colorStyle = 'bg-green-600';

@@ -1,8 +1,8 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { authClient } from '@/lib/auth-client';
-import { guestId, socket } from '@/lib/socket';
+import type { Socket } from 'socket.io-client';
 import { useAlert } from './AlertContext';
 import { usePathname } from 'next/navigation';
 
@@ -15,6 +15,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: session, isPending, error, refetch } = authClient.useSession();
     const { showAlert } = useAlert();
     const [connected, setConnected] = useState(false);
+    const socketRef = useRef<Socket | null>(null);
     const token = session?.session.token;
     const pathname = usePathname();
     const [multiplayerRequested, setMultiplayerRequested] = useState(false);
@@ -32,25 +33,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [error, refetch]);
 
     useEffect(() => {
-        const onConnect = () => setConnected(true);
-        const onDisconnect = () => setConnected(false);
-        socket.on('connect', onConnect);
-        socket.on('disconnect', onDisconnect);
-        return () => {
-            socket.off('connect', onConnect);
-            socket.off('disconnect', onDisconnect);
-        };
-    }, []);
-
-    useEffect(() => {
         if (isPending || error || !wantsMultiplayer) return;
-        socket.auth = { token, guestId: guestId() };
-        socket.connect();
-        return () => { socket.disconnect(); };
-    }, [isPending, error, token, wantsMultiplayer]);
+        let disposed = false;
+        let cleanup: (() => void) | undefined;
+        void import('@/lib/socket').then(({ socket, guestId }) => {
+            if (disposed) return;
+            socketRef.current = socket;
+            const onConnect = () => setConnected(true);
+            const onDisconnect = () => setConnected(false);
+            socket.on('connect', onConnect);
+            socket.on('disconnect', onDisconnect);
+            socket.auth = { token, guestId: guestId() };
+            setConnected(socket.connected);
+            socket.connect();
+            cleanup = () => {
+                socket.off('connect', onConnect);
+                socket.off('disconnect', onDisconnect);
+                socket.disconnect();
+                setConnected(false);
+            };
+        }).catch(() => { if (!disposed) showAlert('Could not load multiplayer. Please reload and try again.'); });
+        return () => { disposed = true; cleanup?.(); };
+    }, [isPending, error, token, wantsMultiplayer, showAlert]);
 
     const requireServer = useCallback((multiplayer = false) => {
-        if (!isPending && !error && (!multiplayer || (connected && socket.connected))) return true;
+        if (!isPending && !error && (!multiplayer || (connected && socketRef.current?.connected))) return true;
         showAlert(error
             ? 'The server is temporarily unavailable. Reconnecting in the background. Please try again shortly.'
             : isPending ? 'The server is waking up. Please try again in a moment.'
@@ -61,6 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const connectMultiplayer = useCallback(async (signal?: AbortSignal) => {
         if (signal?.aborted) return false;
         if (!requireServer()) return false;
+        const { socket, guestId } = await import('@/lib/socket');
+        if (signal?.aborted) return false;
+        socketRef.current = socket;
         setMultiplayerRequested(true);
         socket.auth = { token, guestId: guestId() };
         if (socket.connected) return true;
@@ -78,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 resolve(ready);
             };
             const onAbort = () => finish(false);
-            const onConnect = () => finish(true);
+            const onConnect = () => { setConnected(true); finish(true); };
             const onError = () => finish(false);
             const timer = setTimeout(onError, 15_000);
             signal?.addEventListener('abort', onAbort, { once: true });

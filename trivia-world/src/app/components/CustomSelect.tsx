@@ -1,58 +1,20 @@
 'use client';
 
-import { useState, useRef, useEffect, memo } from 'react';
+import { memo } from 'react';
+import Icon from './Icon';
 
 type Option = { value: string; label: string };
-type CustomSelectProps = { options: Option[]; value: string; onChange: (value: string) => void; placeholder: string };
+type CustomSelectProps = { id?: string; options: Option[]; value: string; onChange: (value: string) => void; placeholder: string };
 
-/**
- * Displays a stylized dropdown select component with custom theming.
- * @param props - List of selectable options, the current value, and callbacks.
- * @returns A toggleable dropdown menu for choosing an option.
- */
-function CustomSelect({ options, value, onChange, placeholder }: CustomSelectProps) {
-    const [isOpen, setIsOpen] = useState(false);
-    const selectRef = useRef<HTMLDivElement>(null);
-    const selectedLabel = options.find((opt) => opt.value === value)?.label || placeholder;
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    return (
-        <div className="relative" ref={selectRef}>
-            <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full p-3 flex justify-between items-center rounded-md bg-white/10 border border-white/20 focus:ring-2 focus:ring-primary cursor-pointer"
-            >
-                <span className={value ? 'text-white' : 'text-gray-400'}>{selectedLabel}</span>
-                <span className={`material-symbols-outlined transition-transform ${isOpen ? 'rotate-180' : ''}`}>expand_more</span>
-            </button>
-
-            {isOpen && (
-                <div className="absolute z-10 w-full mt-2 max-h-60 overflow-y-auto rounded-md bg-[#253325] border border-border-color shadow-lg">
-                    {options.map((option) => (
-                        <div
-                            key={option.value}
-                            onClick={() => {
-                                onChange(option.value);
-                                setIsOpen(false);
-                            }}
-                            className="px-4 py-3 text-white cursor-pointer hover:bg-green-800 transition-colors "
-                        >
-                            {option.label}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
+// A native select supplies keyboard, touch, and screen-reader behavior without
+// global listeners or another menu implementation to keep in sync.
+function CustomSelect({ id, options, value, onChange, placeholder }: CustomSelectProps) {
+    return <div className="relative">
+        <select id={id} aria-label={id ? undefined : placeholder} value={value} onChange={event => onChange(event.target.value)} className="w-full appearance-none p-3 pr-10 rounded-md bg-[#253325] border border-white/20 text-white focus:ring-2 focus:ring-primary cursor-pointer">
+            {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <Icon name="chevron" className="pointer-events-none absolute right-3 top-3" />
+    </div>;
 }
 
 export default memo(CustomSelect);

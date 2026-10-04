@@ -1,17 +1,17 @@
 'use client';
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 type AlertType = 'success' | 'error' | 'warning';
 type AlertMessage = { message: string; type: AlertType };
 
 type AlertContextType = {
-    alert: AlertMessage | null;
     showAlert: (message: string, type?: AlertType) => void;
     hideAlert: () => void;
 };
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
+const AlertStateContext = createContext<AlertMessage | null>(null);
 
 /**
  * Manages ephemeral alert messages and exposes helpers to trigger or hide them.
@@ -29,7 +29,14 @@ export function AlertProvider({ children }: { children: ReactNode }) {
         setAlert(null);
     }, []);
 
-    return <AlertContext.Provider value={{ alert, showAlert, hideAlert }}>{children}</AlertContext.Provider>;
+    const actions = useMemo(() => ({ showAlert, hideAlert }), [showAlert, hideAlert]);
+    return <AlertContext.Provider value={actions}>
+        <AlertStateContext.Provider value={alert}>{children}</AlertStateContext.Provider>
+    </AlertContext.Provider>;
+}
+
+export function useAlertMessage() {
+    return useContext(AlertStateContext);
 }
 
 /**

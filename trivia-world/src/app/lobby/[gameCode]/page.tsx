@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import CustomSelect from '@/app/components/CustomSelect';
+import { categoryOptions, formatCategory } from '@/lib/categories';
 import { useAlert } from '@/context/AlertContext';
 import { socket } from '@/lib/socket';
 import { requestLobby } from '@/lib/lobby-request';
@@ -12,18 +13,6 @@ import { useAuth } from '@/context/AuthContext';
 const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
 
 type PlayerView = { id?: string; name: string; score?: number; answered?: boolean; avatar?: string | null };
-const CATEGORY_DISPLAY_MAP: Record<string, string> = {
-    general_knowledge: 'General Knowledge',
-    film_and_tv: 'Film & TV',
-    music: 'Music',
-    science: 'Science',
-    history: 'History',
-    sport_and_leisure: 'Sport & Leisure',
-    geography: 'Geography',
-    arts_and_literature: 'Arts & Literature',
-    society_and_culture: 'Society & Culture',
-    food_and_drink: 'Food & Drink',
-};
 
 type Question = {
     index?: number;
@@ -62,12 +51,11 @@ export default function LobbyPage() {
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const { user, profile, multiplayerConnected, requireServer } = useAuth();
     const { showAlert } = useAlert();
-    const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
     const [category, setCategory] = useState<string>('');
     const [difficulty, setDifficulty] = useState<string>('');
-    const [amount, setAmount] = useState<number>(10);
+    const [amount, setAmount] = useState('10');
     const [isTimeLimitEnabled, setIsTimeLimitEnabled] = useState<boolean>(true);
-    const [timeLimit, setTimeLimit] = useState<number>(15);
+    const [timeLimit, setTimeLimit] = useState('15');
     const [inGame, setInGame] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
     const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -95,13 +83,6 @@ export default function LobbyPage() {
      * @param apiCategory - Category identifier received from the backend or API.
      * @returns Normalized category label for presentation in the UI.
      */
-    const formatCategory = (apiCategory?: string) => {
-        if (!apiCategory) return 'Mixed';
-        const normalized = apiCategory.toLowerCase().replace(/ /g, '_');
-        if (CATEGORY_DISPLAY_MAP[normalized]) return CATEGORY_DISPLAY_MAP[normalized];
-        return apiCategory.replace(/[_-]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-    };
-
     useEffect(() => {
         const currentPlayerName = typeof window !== 'undefined' ? sessionStorage.getItem('playerName') : null;
         if (currentPlayerName && currentPlayerName.length > 15) {
@@ -143,22 +124,6 @@ export default function LobbyPage() {
     }, [multiplayerConnected, user, joined, joinLobby]);
 
     useEffect(() => {
-        const triviaApiCategories = [
-            { id: 4, name: 'General Knowledge' },
-            { id: 2, name: 'Film & TV' },
-            { id: 7, name: 'Music' },
-            { id: 8, name: 'Science' },
-            { id: 6, name: 'History' },
-            { id: 10, name: 'Sport & Leisure' },
-            { id: 5, name: 'Geography' },
-            { id: 1, name: 'Arts & Literature' },
-            { id: 9, name: 'Society & Culture' },
-            { id: 3, name: 'Food & Drink' },
-        ];
-        setCategories(triviaApiCategories);
-    }, []);
-
-    useEffect(() => {
         const onUpdate = (list: PlayerView[]) => {
             setPlayers(list);
             if (list.some(p => p.id === socket.id)) setJoined(true);
@@ -190,8 +155,8 @@ export default function LobbyPage() {
             }
             if (payload.settings && ['loading', 'question', 'reveal'].includes(payload.phase || '')) {
                 setCategory(payload.settings.category || ''); setDifficulty(payload.settings.difficulty || '');
-                setAmount(payload.settings.amount); setIsTimeLimitEnabled(payload.settings.timeLimit !== null);
-                setTimeLimit(payload.settings.timeLimit || 15);
+                setAmount(String(payload.settings.amount)); setIsTimeLimitEnabled(payload.settings.timeLimit !== null);
+                setTimeLimit(String(payload.settings.timeLimit || 15));
             }
             if (payload.phase === 'lobby' || payload.phase === 'loading') { setInGame(false); setShowGameOver(false); setCurrentQuestion(null); }
             if (payload.question) {
@@ -236,22 +201,20 @@ export default function LobbyPage() {
             setTimeLeft(remaining);
 
             if (remaining > 0) {
+                const endsAt = transitionEnd ?? Date.now() + remaining * 1000;
                 revealTimerRef.current = window.setInterval(() => {
-                    setTimeLeft((prev) => {
-                        const curr = transitionEnd ? Math.max(0, Math.ceil((transitionEnd - Date.now()) / 1000)) : prev - 1;
-                        if (curr <= 0) {
-                            if (revealTimerRef.current) window.clearInterval(revealTimerRef.current);
-                            revealTimerRef.current = null;
-                            setCurrentQuestion(null);
-                            setTimeLeft(0);
-                            setRevealedAnswer(null);
-                            setEveryoneAnswered(false);
-                            setIsTransitioning(false);
-                            setIsRevealPhase(false);
-                            return 0;
-                        }
-                        return curr;
-                    });
+                    const curr = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+                    setTimeLeft(curr);
+                    if (curr <= 0) {
+                        if (revealTimerRef.current) window.clearInterval(revealTimerRef.current);
+                        revealTimerRef.current = null;
+                        setCurrentQuestion(null);
+                        setTimeLeft(0);
+                        setRevealedAnswer(null);
+                        setEveryoneAnswered(false);
+                        setIsTransitioning(false);
+                        setIsRevealPhase(false);
+                    }
                 }, 1000) as unknown as number;
             } else {
                 if (revealTimerRef.current) {
@@ -360,7 +323,7 @@ export default function LobbyPage() {
 
     useEffect(() => {
         if (isRevealPhase) return;
-        if (!currentQuestion?.endTime || timeLeft <= 0) {
+        if (!currentQuestion?.endTime) {
             if (timerRef.current) {
                 window.clearInterval(timerRef.current);
                 timerRef.current = null;
@@ -373,6 +336,8 @@ export default function LobbyPage() {
                 const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
                 setTimeLeft(remaining);
                 if (remaining <= 0) {
+                    if (timerRef.current) window.clearInterval(timerRef.current);
+                    timerRef.current = null;
                     if (gameCode) {
                         socket.emit('get-state', gameCode);
                     }
@@ -385,7 +350,7 @@ export default function LobbyPage() {
                 timerRef.current = null;
             }
         };
-    }, [currentQuestion?.endTime, timeLeft, gameCode, isRevealPhase]);
+    }, [currentQuestion?.endTime, gameCode, isRevealPhase]);
 
     const isHost = players.length > 0 && players[0].id === socket.id;
 
@@ -395,12 +360,18 @@ export default function LobbyPage() {
      */
     const handleStart = () => {
         if (!isHost || !gameCode || starting || !requireServer(true)) return;
+        const count = /^\d+$/.test(amount) ? Number(amount) : 0;
+        const seconds = /^\d+$/.test(timeLimit) ? Number(timeLimit) : 0;
+        if (count < 1 || count > 50 || (isTimeLimitEnabled && (seconds < 5 || seconds > 120))) {
+            showAlert('Choose 1–50 questions and a time limit of 5–120 seconds.');
+            return;
+        }
         setStarting(true);
         const settings = {
             category: category || undefined,
             difficulty: difficulty || undefined,
-            amount: amount || 10,
-            timeLimit: isTimeLimitEnabled ? timeLimit : null,
+            amount: count,
+            timeLimit: isTimeLimitEnabled ? seconds : null,
         };
         socket.emit('start-game', { gameCode, settings });
     };
@@ -441,7 +412,9 @@ export default function LobbyPage() {
                         Enter your name to join game: <span className="font-bold text-green-400">{gameCode}</span>
                     </p>
 
+                    <label htmlFor="lobby-name" className="block text-white">Your name</label>
                     <input
+                        id="lobby-name" autoComplete="nickname"
                         className="w-full h-14 px-6 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-green-800"
                         placeholder="Enter Your Name"
                         type="text"
@@ -480,7 +453,7 @@ export default function LobbyPage() {
                         Login/Signup
                     </button>
                 </div>
-                <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+                {isAuthModalOpen && <AuthModal isOpen onClose={() => setIsAuthModalOpen(false)} />}
             </div>
         );
     }
@@ -532,7 +505,7 @@ export default function LobbyPage() {
                     </button>
                 )}
             </div>
-            <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+            {isAuthModalOpen && <AuthModal isOpen onClose={() => setIsAuthModalOpen(false)} />}
             {!inGame ? (
                 <div className="w-full max-w-7xl flex flex-col lg:flex-row items-stretch lg:items-center justify-start lg:justify-center gap-6 lg:gap-8 pt-4 lg:pt-0 lg:p-8">
                     <div className="hidden lg:block w-64 flex-shrink-0" />
@@ -547,22 +520,17 @@ export default function LobbyPage() {
                         {isHost ? (
                             <div className="space-y-6">
                                 <div>
-                                    <label className="block mb-2 font-bold">Category</label>
+                                    <label htmlFor="lobby-category" className="block mb-2 font-bold">Category</label>
                                     <CustomSelect
-                                        options={[
-                                            { value: '', label: 'Any' },
-                                            ...categories.map((c) => ({
-                                                value: c.name.toLowerCase().replace(/ & /g, '_and_').replace(/ /g, '_'),
-                                                label: c.name,
-                                            })),
-                                        ]}
+                                        id="lobby-category"
+                                        options={categoryOptions}
                                         value={category}
                                         onChange={setCategory}
                                         placeholder="Select a category..."
                                     />
                                 </div>
                                 <div>
-                                    <label className="block mb-2 font-bold">Difficulty</label>
+                                    <p className="block mb-2 font-bold">Difficulty</p>
                                     <div className="grid grid-cols-2 gap-3">
                                         {[
                                             { key: 'easy', label: 'Easy' },
@@ -589,33 +557,32 @@ export default function LobbyPage() {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block mb-2 font-bold">Questions</label>
+                                    <label htmlFor="question-count" className="block mb-2 font-bold">Questions</label>
                                     <input
+                                        id="question-count" min={1} max={50} step={1}
                                         type="number"
                                         value={amount}
-                                        onChange={(e) => setAmount(Number(e.target.value))}
+                                        onChange={(e) => setAmount(e.target.value)}
                                         className="w-full p-2 rounded-md bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-green-800 cursor-pointer"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block mb-2 font-bold">Time Limit</label>
+                                    <label htmlFor="time-limit" className="block mb-2 font-bold">Time Limit (seconds)</label>
                                     <div className="flex items-center gap-4 mb-2">
-                                        <span>Enable Time Limit</span>
-                                        <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" checked={isTimeLimitEnabled} onChange={(e) => setIsTimeLimitEnabled(e.target.checked)} className="sr-only peer" />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
-                                        </label>
+                                        <label htmlFor="enable-timer">Enable Time Limit</label>
+                                        <div className="relative inline-flex items-center cursor-pointer">
+                                            <input id="enable-timer" aria-label="Enable Time Limit" type="checkbox" checked={isTimeLimitEnabled} onChange={(e) => setIsTimeLimitEnabled(e.target.checked)} className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer peer" />
+                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-transform dark:border-gray-600 peer-checked:bg-green-600"></div>
+                                        </div>
                                     </div>
                                     {isTimeLimitEnabled && (
                                         <input
+                                            id="time-limit"
                                             type="number"
                                             value={timeLimit}
                                             min={5}
-                                            max={45}
-                                            onChange={(e) => {
-                                                const val = Number(e.target.value);
-                                                if (val >= 5 && val <= 45) setTimeLimit(val);
-                                            }}
+                                            max={120}
+                                            onChange={(e) => setTimeLimit(e.target.value)}
                                             className="w-full p-2 rounded-md bg-white/10 text-white focus:outline-none focus:ring-2 focus:ring-green-800 cursor-pointer"
                                         />
                                     )}
@@ -659,7 +626,7 @@ export default function LobbyPage() {
                                         >
                                             {p.avatar ? (
                                                 <div className="relative w-6 h-6 rounded-full overflow-hidden">
-                                                    <Image src={p.avatar} alt={p.name} fill style={{ objectFit: 'cover' }} />
+                                                    <Image src={p.avatar} alt={p.name} fill sizes="40px" style={{ objectFit: 'cover' }} />
                                                 </div>
                                             ) : (
                                                 <div className="w-6 h-6 rounded-full bg-green-800 flex items-center justify-center text-xs font-bold">
@@ -747,7 +714,7 @@ export default function LobbyPage() {
                                     <button
                                         key={ans}
                                         onClick={() => handleSubmitAnswer(ans)}
-                                        className={`p-3 sm:p-4 rounded-lg text-left transition-all ${buttonClass}`}
+                                        className={`p-3 sm:p-4 rounded-lg text-left transition-colors ${buttonClass}`}
                                         disabled={isRevealPhase || (!!currentQuestion?.timeLimit && timeLeft <= 0)}
                                     >
                                         {ans}
@@ -769,7 +736,7 @@ export default function LobbyPage() {
                                             <span className="font-bold text-lg w-6 text-center">{index + 1}</span>
                                             {p.avatar ? (
                                                 <div className="relative w-10 h-10 rounded-full overflow-hidden">
-                                                    <Image src={p.avatar} alt={p.name} fill style={{ objectFit: 'cover' }} />
+                                                    <Image src={p.avatar} alt={p.name} fill sizes="40px" style={{ objectFit: 'cover' }} />
                                                 </div>
                                             ) : (
                                                 <div className="w-10 h-10 rounded-full bg-green-800 flex items-center justify-center text-base font-bold">

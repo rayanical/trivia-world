@@ -1,10 +1,10 @@
 'use client';
 
 import Image from 'next/image';
+import Icon from './components/Icon';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { requestLobby } from '@/lib/lobby-request';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 
@@ -35,6 +35,7 @@ export default function WelcomePage() {
     };
 
     const resolvedAvatar = profile?.avatar_url || null;
+    const preloadMultiplayer = () => { void import('@/lib/lobby-request').catch(() => {}); };
 
     /**
      * Routes the player to the solo gameplay flow after saving their display name.
@@ -56,6 +57,7 @@ export default function WelcomePage() {
         setPendingLobby(kind);
         try {
             if (!await connectMultiplayer(controller.signal) || controller.signal.aborted) return;
+            const { requestLobby } = await import('@/lib/lobby-request');
             const player = { name: resolvePlayerName(), avatar: resolvedAvatar };
             const code = await requestLobby(kind === 'create' ? 'create-game' : 'join-game', kind === 'create' ? player : { gameCode, player }, controller.signal);
             sessionStorage.setItem('playerName', player.name);
@@ -92,7 +94,7 @@ export default function WelcomePage() {
                             <div className="flex items-center gap-4 w-full p-3 rounded-md bg-white/5 border border-white/20">
                                 {profile?.avatar_url ? (
                                     <div className="relative w-12 h-12 rounded-full overflow-hidden">
-                                        <Image src={profile.avatar_url} alt="User Avatar" fill style={{ objectFit: 'cover' }} />
+                                        <Image src={profile.avatar_url} alt="User Avatar" fill sizes="80px" style={{ objectFit: 'cover' }} />
                                     </div>
                                 ) : (
                                     <div className="w-12 h-12 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">
@@ -105,32 +107,37 @@ export default function WelcomePage() {
                                 </div>
                             </div>
                         ) : (
-                            <input
+                            <><label htmlFor="player-name" className="block mb-2 text-sm text-white/70">Your name (optional)</label><input
+                                id="player-name" autoComplete="nickname"
                                 className="w-full h-14 px-6 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-primary"
                                 placeholder="Enter Your Name (Optional)"
                                 type="text"
                                 maxLength={15}
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
-                            />
+                            /></>
                         )}
                     </div>
 
                     <div className="w-full max-w-md flex flex-col gap-4">
                         <button
                             onClick={handlePlaySolo}
+                            onPointerEnter={() => router.prefetch('/solo')}
+                            onFocus={() => router.prefetch('/solo')}
                             className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
-                            <span className="material-symbols-outlined text-2xl">person</span>
+                            <Icon name="person" />
                             <span className="truncate">Play Solo</span>
                         </button>
 
                         <button
                             onClick={() => void enterLobby('create')}
+                            onPointerEnter={preloadMultiplayer}
+                            onFocus={preloadMultiplayer}
                             disabled={pendingLobby !== null}
                             className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
-                            <span className="material-symbols-outlined text-2xl">groups</span>
+                            <Icon name="groups" />
                             <span className="truncate">{pendingLobby === 'create' ? 'Connecting…' : 'Create Multiplayer Game'}</span>
                         </button>
                     </div>
@@ -141,8 +148,11 @@ export default function WelcomePage() {
                         <hr className="flex-grow border-white/20" />
                     </div>
 
-                    <div className="relative w-full max-w-md">
+                    <div className="w-full max-w-md">
+                        <label htmlFor="join-code" className="block mb-2 text-sm text-white/70">Game code</label>
+                        <div className="relative">
                         <input
+                            id="join-code" autoComplete="off" maxLength={5}
                             className="w-full h-14 pl-6 pr-32 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 focus:ring-2 focus:ring-primary"
                             placeholder="Enter Game Code to Join"
                             type="text"
@@ -151,15 +161,18 @@ export default function WelcomePage() {
                         />
                         <button
                             onClick={() => void enterLobby('join')}
+                            onPointerEnter={preloadMultiplayer}
+                            onFocus={preloadMultiplayer}
                             className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md h-10 px-3 text-xs sm:px-4 sm:text-sm bg-[#16A34A] hover:bg-[#15803D] text-white font-bold cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
                             disabled={pendingLobby !== null || !gameCode || gameCode.length !== 5}
                         >
                             {pendingLobby === 'join' ? 'Connecting…' : 'Join Game'}
                         </button>
+                        </div>
                     </div>
                 </div>
             </main>
-            <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+            {isAuthModalOpen && <AuthModal isOpen onClose={() => setIsAuthModalOpen(false)} />}
         </div>
     );
 }

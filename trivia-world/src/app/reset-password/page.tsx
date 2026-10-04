@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import PasswordValidator from '@/app/components/PasswordValidator';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
@@ -33,7 +33,7 @@ export default function ResetPasswordPage() {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<string | null>('Verifying your request...');
     const [isTokenValid, setIsTokenValid] = useState(false);
-    const [token, setToken] = useState('');
+    const token = useRef('');
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -44,7 +44,7 @@ export default function ResetPasswordPage() {
             setMessage(null);
             setIsTokenValid(false);
         } else {
-            setToken(accessToken);
+            token.current = accessToken;
             setMessage('You can now reset your password.');
             setIsTokenValid(true);
         }
@@ -66,7 +66,7 @@ export default function ResetPasswordPage() {
         setError(null);
 
         try {
-            const { error: updateError } = await authClient.resetPassword({ newPassword: password, token });
+            const { error: updateError } = await authClient.resetPassword({ newPassword: password, token: token.current });
 
             if (updateError) {
                 throw new Error(updateError.message || 'Invalid or expired password reset link.');
@@ -96,20 +96,24 @@ export default function ResetPasswordPage() {
                         <>
                             {isTokenValid ? (
                                 <>
+                                    <label htmlFor="new-password" className="block mb-2 text-white">New password</label>
                                     <input
+                                        id="new-password" autoComplete="new-password"
                                         type="password"
                                         placeholder="Enter your new password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                                        className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
                                     />
                                     <PasswordValidator password={password} />
+                                    <label htmlFor="confirm-password" className="block mb-2 text-white">Confirm password</label>
                                     <input
+                                        id="confirm-password" autoComplete="new-password"
                                         type="password"
                                         placeholder="Confirm your new password"
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
-                                        className="w-full mb-6 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                                        className="w-full mb-6 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
                                     />
                                     <button
                                         onClick={handleResetPassword}

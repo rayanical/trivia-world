@@ -1,37 +1,28 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { authClient } from '@/lib/auth-client';
 import { api, jsonBody } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
+import ProfileStats, { type UserStats } from './ProfileStats';
 
-type UserStats = {
-    solo_questions_answered: number;
-    solo_questions_correct: number;
-    solo_easy_correct: number;
-    solo_medium_correct: number;
-    solo_hard_correct: number;
-    multiplayer_games_played: number;
-    multiplayer_games_won: number;
-    multiplayer_questions_answered: number;
-    multiplayer_questions_correct: number;
-    multiplayer_easy_correct: number;
-    multiplayer_medium_correct: number;
-    multiplayer_hard_correct: number;
-};
 
 /**
  * Renders the authenticated user's profile dashboard with account management and statistics.
  * @returns Profile management view including avatar upload, username edit, and game stats.
  */
 export default function ProfilePage() {
+    const { user } = useAuth();
+    return <ProfileContent key={user?.id || 'guest'} />;
+}
+
+function ProfileContent() {
     const router = useRouter();
     const { user, profile: authProfile, loading: authLoading, refreshProfile } = useAuth();
     const { showAlert } = useAlert();
-    const showAlertRef = useRef(showAlert);
 
     const [stats, setStats] = useState<UserStats | null>(null);
     const [fetchingData, setFetchingData] = useState(true);
@@ -39,74 +30,33 @@ export default function ProfilePage() {
     const [error, setError] = useState<string | null>(null);
 
     const [newUsername, setNewUsername] = useState('');
-    const [userEmail, setUserEmail] = useState<string | null>(null);
+    const userEmail = user?.email || null;
+    const [retry, setRetry] = useState(0);
+    const userId = user?.id;
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [isEditingUsername, setIsEditingUsername] = useState(false);
 
-    const [activeTab, setActiveTab] = useState<'general' | 'solo' | 'multiplayer'>('general');
 
     useEffect(() => {
-        showAlertRef.current = showAlert;
-    }, [showAlert]);
-
-    useEffect(() => {
-        if (authLoading) {
-            return;
-        }
-        if (!user) {
-            router.push('/');
-            return;
-        }
-
+        if (!userId) return;
+        const controller = new AbortController();
         const fetchData = async () => {
             setFetchingData(true);
             setError(null);
             try {
-                setUserEmail(user.email || null);
-                setNewUsername(authProfile?.username || '');
-                setAvatarPreview(authProfile?.avatar_url || null);
-
-                setStats(await api<UserStats>('/stats'));
+                const data = await api<UserStats>('/stats', { signal: controller.signal });
+                if (!controller.signal.aborted) setStats(data);
             } catch (err) {
-                const message = err instanceof Error ? err.message : 'Failed to load user data.';
-                setError(message);
-                showAlertRef.current(message);
+                if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Failed to load statistics.');
             } finally {
-                setFetchingData(false);
+                if (!controller.signal.aborted) setFetchingData(false);
             }
         };
-
-        fetchData();
-    }, [authLoading, authProfile, router, user]);
-
-    const safeStats = useMemo<UserStats>(() => {
-        return (
-            stats || {
-                solo_questions_answered: 0,
-                solo_questions_correct: 0,
-                solo_easy_correct: 0,
-                solo_medium_correct: 0,
-                solo_hard_correct: 0,
-                multiplayer_games_played: 0,
-                multiplayer_games_won: 0,
-                multiplayer_questions_answered: 0,
-                multiplayer_questions_correct: 0,
-                multiplayer_easy_correct: 0,
-                multiplayer_medium_correct: 0,
-                multiplayer_hard_correct: 0,
-            }
-        );
-    }, [stats]);
-
-    /**
-     * Calculates a percentage helper for statistic cards while guarding division by zero.
-     * @param num - The numerator count, typically correct answers.
-     * @param denom - The denominator count, typically total attempts.
-     * @returns Formatted percentage or em dash when denominator is zero.
-     */
-    const percent = (num: number, denom: number) => (denom === 0 ? '—' : `${Math.round((num / denom) * 100)}%`);
+        void fetchData();
+        return () => controller.abort();
+    }, [userId, retry]);
 
     /**
      * Persists username edits for the current user profile and refreshes cached context data.
@@ -182,27 +132,12 @@ export default function ProfilePage() {
         if (error) { showAlert(error.message || 'Could not sign out.'); return; }
         router.push('/');
     };
-
-    /**
-     * Navigates back to the landing page without altering authentication state.
-     */
     const handleBackHome = () => router.push('/');
 
-    if (authLoading || fetchingData) {
-        return (
-            <div className="flex h-screen items-center justify-center bg-[#101710] text-white">
-                <div>Loading profile…</div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex h-screen items-center justify-center bg-[#101710] text-white">
-                <div className="text-red-400">{error}</div>
-            </div>
-        );
-    }
+    if (authLoading) return <div className="flex min-h-screen items-center justify-center bg-[#101710] text-white">Loading profile…</div>;
+    if (!user) return <div className="flex min-h-screen flex-col items-center justify-center gap-4 text-white bg-[#101710]">
+        <p>Sign in to view your profile.</p><button onClick={handleBackHome} className="p-3 rounded-md bg-green-800">Back to Home</button>
+    </div>;
 
     return (
         <div className="min-h-screen bg-[#101710] text-white p-4 md:p-6">
@@ -227,8 +162,7 @@ export default function ProfilePage() {
                     <div className="flex flex-col items-center gap-3 w-full">
                         <div className="w-28 h-28 rounded-full overflow-hidden bg-white/6 flex items-center justify-center">
                             {avatarPreview ? (
-                                // eslint-disable-next-line @next/next/no-img-element -- local data URL preview
-                                <img src={avatarPreview} alt="avatar-preview" className="w-full h-full object-cover" />
+                                <Image src={avatarPreview} alt="Your avatar" width={112} height={112} className="w-full h-full object-cover" />
                             ) : authProfile?.avatar_url ? (
                                 <Image src={authProfile.avatar_url} alt="avatar" width={112} height={112} className="object-cover" />
                             ) : (
@@ -243,9 +177,7 @@ export default function ProfilePage() {
                             onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
-                                const reader = new FileReader();
-                                reader.onload = () => setAvatarPreview(String(reader.result));
-                                reader.readAsDataURL(file);
+                                e.target.value = '';
                                 void handleAvatarUpload(file);
                             }}
                         />
@@ -258,10 +190,11 @@ export default function ProfilePage() {
                         </button>
 
                         <div className="w-full mt-4">
-                            <label className="block mb-1 text-sm text-gray-400">Username</label>
+                            <p className="block mb-1 text-sm text-gray-400">Username</p>
                             {isEditingUsername ? (
                                 <div className="flex flex-col gap-2">
                                     <input
+                                        id="profile-username" aria-label="Username" maxLength={15}
                                         type="text"
                                         value={newUsername}
                                         onChange={(e) => setNewUsername(e.target.value)}
@@ -289,7 +222,7 @@ export default function ProfilePage() {
                             ) : (
                                 <div className="flex items-center justify-between">
                                     <p className="text-lg">{authProfile?.username || '—'}</p>
-                                    <button onClick={() => setIsEditingUsername(true)} className="text-sm text-green-400 hover:underline cursor-pointer">
+                                    <button onClick={() => { setNewUsername(authProfile?.username || ''); setIsEditingUsername(true); }} className="text-sm text-green-400 hover:underline cursor-pointer">
                                         Change
                                     </button>
                                 </div>
@@ -297,7 +230,7 @@ export default function ProfilePage() {
                         </div>
 
                         <div className="w-full mt-2">
-                            <label className="block mb-1 text-sm text-gray-400">Email</label>
+                            <p className="block mb-1 text-sm text-gray-400">Email</p>
                             <p className="text-lg text-gray-300">{userEmail ?? '—'}</p>
                         </div>
 
@@ -312,112 +245,7 @@ export default function ProfilePage() {
                         </div>
                     </div>
                 </section>
-                <section className="md:col-span-2 bg-white/5 rounded-lg p-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-semibold">Statistics</h2>
-                        <div className="flex flex-wrap gap-3">
-                            <button
-                                onClick={() => setActiveTab('general')}
-                                className={`px-3 py-1 rounded-md cursor-pointer ${activeTab === 'general' ? 'bg-green-800' : 'bg-white/6'}`}
-                            >
-                                General
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('solo')}
-                                className={`px-3 py-1 rounded-md cursor-pointer ${activeTab === 'solo' ? 'bg-yellow-500 text-black' : 'bg-white/6'}`}
-                            >
-                                Solo
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('multiplayer')}
-                                className={`px-3 py-1 rounded-md cursor-pointer ${activeTab === 'multiplayer' ? 'bg-red-600' : 'bg-white/6'}`}
-                            >
-                                Multiplayer
-                            </button>
-                        </div>
-                    </div>
-
-                    {activeTab === 'general' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Total Solo Answered</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.solo_questions_answered}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Total Multiplayer Answered</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_questions_answered}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Games Played</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_games_played}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'solo' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Questions Answered</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.solo_questions_answered}</div>
-                                <div className="text-sm text-gray-400">
-                                    Correct: {safeStats.solo_questions_correct} ({percent(safeStats.solo_questions_correct, safeStats.solo_questions_answered)})
-                                </div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Easy Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold text-green-400">{safeStats.solo_easy_correct}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Medium Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold text-yellow-400">{safeStats.solo_medium_correct}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Hard Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold text-red-400">{safeStats.solo_hard_correct}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'multiplayer' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Matches Played</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_games_played}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Matches Won</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_games_won}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Multiplayer Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold">{safeStats.multiplayer_questions_correct}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Easy Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold text-green-400">{safeStats.multiplayer_easy_correct}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Medium Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold text-yellow-400">{safeStats.multiplayer_medium_correct}</div>
-                            </div>
-                            <div className="p-4 rounded-md bg-white/6">
-                                <div className="text-sm text-gray-300">Hard Correct</div>
-                                <div className="text-xl sm:text-2xl font-bold text-red-400">{safeStats.multiplayer_hard_correct}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="mt-6">
-                        <h3 className="text-lg font-medium mb-2">Details</h3>
-                        <div className="p-4 rounded-md bg-white/6">
-                            <div className="text-sm text-gray-300">Solo accuracy</div>
-                            <div className="text-xl font-bold">{percent(safeStats.solo_questions_correct, safeStats.solo_questions_answered)}</div>
-
-                            <div className="mt-4 text-sm text-gray-300">Multiplayer accuracy</div>
-                            <div className="text-xl font-bold">{percent(safeStats.multiplayer_questions_correct, safeStats.multiplayer_questions_answered)}</div>
-                        </div>
-                    </div>
-                </section>
+                <ProfileStats stats={stats} loading={fetchingData} error={error} onRetry={() => setRetry(value => value + 1)} />
             </main>
         </div>
     );

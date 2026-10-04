@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import PasswordValidator from './PasswordValidator';
+import { submitEmailAuth } from '@/lib/email-auth';
 import { authClient } from '@/lib/auth-client';
 import { api } from '@/lib/api';
 import { useAlert } from '@/context/AlertContext';
@@ -13,20 +14,6 @@ type AuthModalProps = {
 };
 
 /**
- * Validates password complexity requirements for sign-up flows.
- * @param password - Raw password input supplied by the user.
- * @returns Descriptive error string when invalid, otherwise null.
- */
-const validatePassword = (password: string): string | null => {
-    if (password.length < 8) return 'Password must be at least 8 characters';
-    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter';
-    if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter';
-    if (!/[0-9]/.test(password)) return 'Password must contain at least one number';
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return 'Password must contain at least one special character';
-    return null;
-};
-
-/**
  * Presents a modal for signing in or creating an account via Better Auth.
  * @param props - Control flags and callbacks for the modal lifecycle.
  * @returns Authentication modal dialog or null when closed.
@@ -35,50 +22,51 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
-    const [isSignup, setIsSignup] = useState(false);
+    const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
+    const isSignup = mode === 'signup';
+    const isResetting = mode === 'reset';
+    const dialog = useRef<HTMLDialogElement>(null);
+    const submitting = useRef(false);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const { showAlert } = useAlert();
     const { requireServer } = useAuth();
     const [googleEnabled, setGoogleEnabled] = useState(false);
-    const [isResetting, setIsResetting] = useState(false);
+
 
     useEffect(() => {
-        if (isOpen) api<{ googleEnabled: boolean }>('/config').then((config) => setGoogleEnabled(config.googleEnabled)).catch(() => setGoogleEnabled(false));
+        if (!isOpen) return;
+        const element = dialog.current;
+        const previousFocus = document.activeElement;
+        element?.showModal();
+        const controller = new AbortController();
+        api<{ googleEnabled: boolean }>('/config', { signal: controller.signal })
+            .then(config => { if (!controller.signal.aborted) setGoogleEnabled(config.googleEnabled); })
+            .catch(() => { if (!controller.signal.aborted) setGoogleEnabled(false); });
+        return () => {
+            controller.abort(); element?.close();
+            if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+        };
     }, [isOpen]);
 
     /**
      * Handles email-based sign in or sign up flows, including profile provisioning.
      */
     const handleAuth = async () => {
-        if (!requireServer()) return;
+        if (submitting.current) return;
+        if (!requireServer()) { setError('The server is connecting. Please try again in a moment.'); return; }
+        submitting.current = true;
         setLoading(true);
         setError(null);
 
         try {
-            if (isResetting) {
-                const { error } = await authClient.requestPasswordReset({ email, redirectTo: `${window.location.origin}/reset-password` });
-                if (error) throw new Error(error.message || 'Could not request a reset email.');
-                showAlert('If an account exists for this email, a reset link will arrive shortly.', 'success');
-                onClose();
-            } else if (isSignup) {
-                const passwordError = validatePassword(password);
-                if (passwordError) throw new Error(passwordError);
-                const name = username.trim();
-                if (name.length < 3 || name.length > 15) throw new Error('Username must be 3–15 characters.');
-                const { error } = await authClient.signUp.email({ email, password, name, callbackURL: window.location.origin });
-                if (error) throw new Error(error.message || 'Could not create your account.');
-                showAlert('Check your email to verify your account before signing in.', 'success');
-                onClose();
-            } else {
-                const { error } = await authClient.signIn.email({ email, password });
-                if (error) throw new Error(error.message || 'Could not sign in.');
-                showAlert('Signed in successfully!', 'success');
-                onClose();
-            }
+            const message = await submitEmailAuth(mode, email, password, username, window.location.origin);
+            showAlert(message, 'success');
+            onClose();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
         } finally {
+            submitting.current = false;
             setLoading(false);
         }
     };
@@ -88,7 +76,9 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
      * @param provider - External identity provider identifier (currently Google).
      */
     const handleOAuthSignIn = async (provider: 'google') => {
-        if (!requireServer()) return;
+        if (submitting.current) return;
+        if (!requireServer()) { setError('The server is connecting. Please try again in a moment.'); return; }
+        submitting.current = true;
         setLoading(true);
         setError(null);
         try {
@@ -97,6 +87,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to sign in with Google');
         } finally {
+            submitting.current = false;
             setLoading(false);
         }
     };
@@ -104,53 +95,57 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-50 p-4">
-            <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-8 rounded-xl shadow-2xl border border-green-900/30 w-full max-w-md">
-                <h2 className="text-3xl font-bold text-green-400 mb-6 text-center">{isResetting ? 'Reset Password' : isSignup ? 'Sign Up' : 'Sign In'}</h2>
-                {error && <div className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+        <dialog ref={dialog} aria-labelledby="auth-title" onCancel={onClose} className="fixed inset-0 m-0 w-full h-full max-w-none max-h-none flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <form onSubmit={event => { event.preventDefault(); void handleAuth(); }} className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-8 rounded-xl shadow-2xl border border-green-900/30 w-full max-w-md max-h-full overflow-y-auto">
+                <h2 id="auth-title" className="text-3xl font-bold text-green-400 mb-6 text-center">{isResetting ? 'Reset Password' : isSignup ? 'Sign Up' : 'Sign In'}</h2>
+                {error && <div role="alert" className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+                <label htmlFor="auth-email" className="block mb-2 text-white">Email</label>
                 <input
+                    id="auth-email" name="email" autoComplete="email" required
                     type="email"
                     placeholder="Email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
+                    className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
                 />
-                {!isResetting && <input
+                {!isResetting && <><label htmlFor="auth-password" className="block mb-2 text-white">Password</label><input
+                    id="auth-password" name="password" autoComplete={isSignup ? 'new-password' : 'current-password'} required
                     type="password"
                     placeholder={isSignup ? 'Password (min 8 chars, 1 upper, 1 number, 1 special)' : 'Password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-                />}
+                    className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                /></>}
                 {!isResetting && isSignup && <PasswordValidator password={password} />}
 
                 {!isResetting && isSignup && (
-                    <input
+                    <><label htmlFor="auth-username" className="block mb-2 text-white">Username</label><input
+                        id="auth-username" name="username" autoComplete="nickname" required
                         type="text"
                         placeholder="Username (3-15 characters)"
                         value={username}
                         maxLength={15}
                         onChange={(e) => setUsername(e.target.value)}
-                        className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-                    />
+                        className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                    /></>
                 )}
                 <div className="flex gap-4">
                     <button
-                        onClick={handleAuth}
+                        type="submit"
                         disabled={loading || !email || (!isResetting && (!password || (isSignup && username.trim().length < 3)))}
                         className="flex-1 p-3 rounded-lg bg-green-700 hover:bg-green-800 text-white font-bold disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-lg"
                     >
                         {loading ? 'Loading...' : isResetting ? 'Send Reset Email' : isSignup ? 'Sign Up' : 'Sign In'}
                     </button>
-                    <button onClick={onClose} className="flex-1 p-3 rounded-lg bg-red-700 hover:bg-red-800 text-white font-bold cursor-pointer transition-colors shadow-lg">
+                    <button type="button" onClick={onClose} className="flex-1 p-3 rounded-lg bg-red-700 hover:bg-red-800 text-white font-bold cursor-pointer transition-colors shadow-lg">
                         Cancel
                     </button>
                 </div>
-                <button onClick={() => { setIsResetting(false); setIsSignup(!isSignup); setError(null); }} className="mt-4 text-green-400 hover:text-green-300 underline w-full text-center cursor-pointer transition-colors">
+                <button type="button" onClick={() => { setMode(isSignup ? 'signin' : 'signup'); setError(null); }} className="mt-4 text-green-400 hover:text-green-300 underline w-full text-center cursor-pointer transition-colors">
                     {isSignup ? 'Switch to Sign In' : 'Switch to Sign Up'}
                 </button>
 
-                <button onClick={() => { setIsResetting(!isResetting); setError(null); }} className="mt-3 text-green-400 underline w-full text-center cursor-pointer">
+                <button type="button" onClick={() => { setMode(isResetting ? 'signin' : 'reset'); setError(null); }} className="mt-3 text-green-400 underline w-full text-center cursor-pointer">
                     {isResetting ? 'Back to sign in' : 'Forgot password?'}
                 </button>
                 {googleEnabled && !isResetting && <>
@@ -164,7 +159,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 </div>
                 <div>
                     <button
-                        onClick={() => handleOAuthSignIn('google')}
+                        type="button" onClick={() => handleOAuthSignIn('google')}
                         disabled={loading}
                         className="w-full flex items-center justify-center gap-3 p-3 rounded-lg bg-white text-gray-800 font-bold hover:bg-gray-200 transition-colors shadow-lg disabled:opacity-70 cursor-pointer disabled:cursor-not-allowed"
                     >
@@ -178,7 +173,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     </button>
                 </div>
                 </>}
-            </div>
-        </div>
+            </form>
+        </dialog>
     );
 }
