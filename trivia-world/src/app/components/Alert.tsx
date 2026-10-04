@@ -25,7 +25,7 @@ export default function Alert() {
 
     if (!alert) return null;
 
-    const baseStyle = 'fixed top-5 right-5 p-4 rounded-lg shadow-lg text-white transition-all duration-300 ease-in-out z-50';
+    const baseStyle = 'fixed top-5 right-5 max-w-[calc(100vw-2.5rem)] p-4 rounded-lg shadow-lg text-white transition-all duration-300 ease-in-out z-50';
     const visibilityStyle = isVisible ? 'animate-slide-in' : 'animate-slide-out';
 
     let colorStyle = 'bg-green-600';
@@ -36,7 +36,7 @@ export default function Alert() {
     }
 
     return (
-        <div className={`${baseStyle} ${colorStyle} ${visibilityStyle}`}>
+        <div role="status" aria-live="polite" className={`${baseStyle} ${colorStyle} ${visibilityStyle}`}>
             <p>{alert.message}</p>
         </div>
     );

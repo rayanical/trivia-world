@@ -28,7 +28,7 @@ type Question = {
  */
 export default function SoloGamePage() {
     const router = useRouter();
-    const { profile } = useAuth();
+    const { profile, requireServer } = useAuth();
     const { showAlert } = useAlert();
 
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -109,6 +109,7 @@ export default function SoloGamePage() {
      * Triggers the first question fetch based on the selected options.
      */
     const handleStartGame = () => {
+        if (!requireServer()) return;
         setScore(0);
         setQuestions([]);
         setCurrentQuestionIndex(0);

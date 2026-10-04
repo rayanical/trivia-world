@@ -19,7 +19,7 @@ export default function WelcomePage() {
     const [name, setName] = useState('');
     const [gameCode, setGameCode] = useState('');
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const { user, profile, loading } = useAuth();
+    const { user, profile, requireServer } = useAuth();
     const { showAlert } = useAlert();
 
     const resolvePlayerName = () => {
@@ -46,6 +46,7 @@ export default function WelcomePage() {
      * Requests creation of a new multiplayer lobby and persists the chosen avatar/name.
      */
     const handleCreateMultiplayerGame = () => {
+        if (!requireServer(true)) return;
         const playerName = resolvePlayerName();
         const player = {
             name: playerName,
@@ -76,8 +77,9 @@ export default function WelcomePage() {
                 return;
             }
 
+            if (!requireServer(true)) return;
+
             sessionStorage.setItem('playerName', player.name);
-            socket.emit('join-game', { gameCode, player });
 
             const onJoinSuccess = ({ gameCode: code }: { gameCode: string }) => {
                 router.push(`/lobby/${code}`);
@@ -93,6 +95,7 @@ export default function WelcomePage() {
 
             socket.on('join-success', onJoinSuccess);
             socket.on('join-error', onJoinError);
+            socket.emit('join-game', { gameCode, player });
         } else {
             showAlert('Please enter a game code.', 'warning');
         }
@@ -127,9 +130,7 @@ export default function WelcomePage() {
                     <p className="text-white/80 text-md sm:text-lg max-w-2xl my-8">The ultimate trivia challenge. Choose your way to play.</p>
 
                     <div className="w-full max-w-md min-h-[5rem] mb-8 flex items-center justify-center">
-                        {loading ? (
-                            <p className="text-white/60">Loading...</p>
-                        ) : user ? (
+                        {user ? (
                             <div className="flex items-center gap-4 w-full p-3 rounded-md bg-white/5 border border-white/20">
                                 {profile?.avatar_url ? (
                                     <div className="relative w-12 h-12 rounded-full overflow-hidden">

@@ -5,6 +5,7 @@ import PasswordValidator from './PasswordValidator';
 import { authClient } from '@/lib/auth-client';
 import { api } from '@/lib/api';
 import { useAlert } from '@/context/AlertContext';
+import { useAuth } from '@/context/AuthContext';
 
 type AuthModalProps = {
     isOpen: boolean;
@@ -38,6 +39,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const { showAlert } = useAlert();
+    const { requireServer } = useAuth();
     const [googleEnabled, setGoogleEnabled] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
 
@@ -49,6 +51,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
      * Handles email-based sign in or sign up flows, including profile provisioning.
      */
     const handleAuth = async () => {
+        if (!requireServer()) return;
         setLoading(true);
         setError(null);
 
@@ -85,6 +88,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
      * @param provider - External identity provider identifier (currently Google).
      */
     const handleOAuthSignIn = async (provider: 'google') => {
+        if (!requireServer()) return;
         setLoading(true);
         setError(null);
         try {
