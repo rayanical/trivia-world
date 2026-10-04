@@ -150,56 +150,6 @@
     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
   },
   {
-    "id": "animals-chicken",
-    "category": "animals",
-    "name": "Chicken",
-    "image": "/guess-who/animals-chicken.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f414.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-penguin",
-    "category": "animals",
-    "name": "Penguin",
-    "image": "/guess-who/animals-penguin.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f427.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-owl",
-    "category": "animals",
-    "name": "Owl",
-    "image": "/guess-who/animals-owl.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f989.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-duck",
-    "category": "animals",
-    "name": "Duck",
-    "image": "/guess-who/animals-duck.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f986.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-eagle",
-    "category": "animals",
-    "name": "Eagle",
-    "image": "/guess-who/animals-eagle.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f985.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
     "id": "animals-bat",
     "category": "animals",
     "name": "Bat",
@@ -505,36 +455,6 @@
     "name": "Otter",
     "image": "/guess-who/animals-otter.svg",
     "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f9a6.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-peacock",
-    "category": "animals",
-    "name": "Peacock",
-    "image": "/guess-who/animals-peacock.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f99a.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-flamingo",
-    "category": "animals",
-    "name": "Flamingo",
-    "image": "/guess-who/animals-flamingo.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f9a9.svg",
-    "author": "Twemoji / Twitter contributors",
-    "license": "CC BY 4.0",
-    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
-  },
-  {
-    "id": "animals-parrot",
-    "category": "animals",
-    "name": "Parrot",
-    "image": "/guess-who/animals-parrot.svg",
-    "source": "https://raw.githubusercontent.com/jdecked/twemoji/v16.0.1/assets/svg/1f99c.svg",
     "author": "Twemoji / Twitter contributors",
     "license": "CC BY 4.0",
     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"

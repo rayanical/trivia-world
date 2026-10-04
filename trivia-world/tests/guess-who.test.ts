@@ -119,3 +119,31 @@ test('ready status is player-owned, survives snapshots and resets for a new roun
     applyAction(room, 'Alice', { type: 'rematch' }, cards);
     expect(room.players.every(p => !p.ready)).toBe(true);
 });
+
+test('returning to the lobby keeps both players and settings while clearing round state', () => {
+    const room = playing(false, true);
+    expect(() => applyAction(room, 'Alice', { type: 'return-lobby' }, cards)).toThrow();
+    applyAction(room, 'Alice', { type: 'guess', cardId: room.board[0].id }, cards);
+    expect(() => applyAction(room, 'Bob', { type: 'return-lobby' }, cards)).toThrow();
+    applyAction(room, 'Bob', { type: 'ready', ready: true }, cards);
+    const ids = room.players.map(p => p.id); const previous = room.board.map(c => c.id);
+    applyAction(room, 'Alice', { type: 'return-lobby' }, cards);
+    expect(room.phase).toBe('lobby'); expect(room.code).toBe('ABCDE');
+    expect(room.players.map(p => p.id)).toEqual(ids);
+    expect(room.settings).toEqual({ category: 'animals', chat: false });
+    expect(room.players.every(p => !p.secretId && !p.ready && !p.skipNext)).toBe(true);
+    expect(room.turnId).toBeNull(); expect(room.winnerId).toBeNull();
+    expect(viewRoom(room, 'Bob').revealedSecrets).toEqual([]);
+    applyAction(room, 'Alice', { type: 'settings', category: 'foods', chat: true }, cards);
+    applyAction(room, 'Alice', { type: 'start' }, cards);
+    expect(room.round).toBe(2); expect(room.category).toBe('foods');
+    expect(room.settings.chat).toBe(true); expect(room.board.every(c => !previous.includes(c.id))).toBe(true);
+});
+
+test('the animal catalogue excludes all bird cards', async () => {
+    const { default: catalogue } = await import('../src/lib/guess-who/catalogue.json');
+    const birds = new Set(['Chicken', 'Penguin', 'Owl', 'Duck', 'Eagle', 'Peacock', 'Flamingo', 'Parrot']);
+    const animals = catalogue.filter(card => card.category === 'animals');
+    expect(animals).toHaveLength(51);
+    expect(animals.some(card => birds.has(card.name))).toBe(false);
+});

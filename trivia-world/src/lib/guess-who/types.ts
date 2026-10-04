@@ -1,7 +1,7 @@
 export const guessCategories = [
     { id: 'random', name: 'Random category', description: 'A surprise category each round' },
     { id: 'celebrities', name: 'Celebrities', description: 'Familiar faces from music, movies and sport' },
-    { id: 'animals', name: 'Animals', description: 'Creatures big, small, furry and feathered' },
+    { id: 'animals', name: 'Animals', description: 'Creatures big, small, furry and scaly' },
     { id: 'foods', name: 'Foods', description: 'Fruit, treats and things to eat' },
 ] as const;
 export type GuessCategory = typeof guessCategories[number]['id'];
@@ -19,7 +19,7 @@ export type GuessState = {
 export type GuessAction =
     | { type: 'create'; name: string; fresh?: boolean }
     | { type: 'join'; name: string }
-    | { type: 'state' } | { type: 'leave' } | { type: 'start' } | { type: 'rematch' } | { type: 'end-turn' }
+    | { type: 'state' } | { type: 'leave' } | { type: 'start' } | { type: 'rematch' } | { type: 'return-lobby' } | { type: 'end-turn' }
     | { type: 'ready'; ready: boolean }
     | { type: 'settings'; category: GuessCategory; chat: boolean }
     | { type: 'select'; cardId: string } | { type: 'guess'; cardId: string }

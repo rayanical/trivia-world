@@ -55,6 +55,13 @@ export function applyAction(room: GuessRoom, playerId: string, action: GuessActi
         case 'ready':
             if (room.phase !== 'lobby' && room.phase !== 'finished') throw new Error('Ready status is only available between rounds.');
             player.ready = action.ready; break;
+        case 'return-lobby':
+            hostOnly();
+            if (room.phase !== 'finished') throw new Error('Finish the round before returning to the lobby.');
+            room.phase = 'lobby'; room.turnId = null; room.winnerId = null; room.pendingQuestion = null;
+            room.messages = []; room.nextMessage = 0;
+            for (const p of room.players) { p.secretId = null; p.skipNext = false; p.ready = false; }
+            break;
         case 'settings':
             hostOnly();
             if (room.phase !== 'lobby') throw new Error('Settings are locked during a round.');

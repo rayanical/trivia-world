@@ -35,7 +35,7 @@ function parseRequest(value: unknown): GuessRequest {
         case 'answer':
             if (action.answer !== 'Yes' && action.answer !== 'No' && action.answer !== 'Not sure') throw new Error('Choose Yes, No or Not sure.');
             parsed = { type: 'answer', answer: action.answer }; break;
-        case 'state': case 'leave': case 'start': case 'rematch': case 'end-turn': parsed = { type: action.type }; break;
+        case 'state': case 'leave': case 'start': case 'rematch': case 'return-lobby': case 'end-turn': parsed = { type: action.type }; break;
         default: throw new Error('Unknown game action.');
     }
     return { requestId, code, version: typeof version === 'number' ? version : undefined, action: parsed };

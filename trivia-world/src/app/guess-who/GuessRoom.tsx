@@ -49,7 +49,7 @@ function RoomBody({ game, leave, returning }: { game: ReturnType<typeof useGuess
 }
 
 function GuessLobby({ state, act, pending, connected }: { state: GuessState | null; act: (action: GuessAction) => Promise<boolean>; pending: boolean; connected: boolean }) {
-    const [settings, setSettings] = useState<GuessSettings>({ category: 'random', chat: true });
+    const [settings, setSettings] = useState<GuessSettings>(() => state?.settings || { category: 'random', chat: true });
     const host = !state || state.hostId === state.meId;
     const start = async () => { if (await act({ type: 'settings', ...settings })) await act({ type: 'start' }); };
     return <div className="mx-auto grid max-w-4xl gap-6 md:grid-cols-[minmax(0,1fr)_18rem]">
