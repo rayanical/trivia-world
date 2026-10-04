@@ -123,6 +123,7 @@ function sendQuestion(code: string, game: Game) {
     game.transitionEnd = undefined;
     game.answers = shuffle([...question.incorrect_answers, question.correct_answer]);
     for (const player of game.players) delete player.lastAnswer;
+    broadcast(code, game);
     game.endAt = game.settings?.timeLimit ? Date.now() + game.settings.timeLimit * 1000 : null;
     io.to(code).emit('question', publicQuestion(game));
     clearTimeout(game.timer);
@@ -232,7 +233,7 @@ io.on('connection', (socket) => {
         if (!game) return socket.emit('join-error', 'Game not found.');
         const player = restorePlayer(socket, game, code);
         if (!player) return;
-        socket.emit('state', { players: publicPlayers(game), question: game.phase === 'question' ? publicQuestion(game) : undefined,
+        socket.emit('state', { phase: game.phase, host: game.host, settings: game.settings, players: publicPlayers(game), question: ['question', 'reveal'].includes(game.phase) ? publicQuestion(game) : undefined,
             timeLeft: game.endAt ? Math.max(0, Math.ceil((game.endAt - Date.now()) / 1000)) : null, myAnswer: player.lastAnswer });
         if (game.phase === 'reveal') socket.emit('question-ended', { correctAnswer: game.correctAnswer, players: publicPlayers(game), transitionEnd: game.transitionEnd });
         if (game.phase === 'finished') socket.emit('game-over', { players: publicPlayers(game) });

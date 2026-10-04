@@ -1,11 +1,12 @@
 'use client';
 import Image from 'next/image';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import CustomSelect from '@/app/components/CustomSelect';
 import { useAlert } from '@/context/AlertContext';
 import { socket } from '@/lib/socket';
+import { requestLobby } from '@/lib/lobby-request';
 import { useAuth } from '@/context/AuthContext';
 
 const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
@@ -44,27 +45,22 @@ type Question = {
 export default function LobbyPage() {
     const params = useParams();
     const router = useRouter();
-    const gameCode = params.gameCode;
+    const gameCode = typeof params.gameCode === 'string' ? params.gameCode : '';
     const [players, setPlayers] = useState<PlayerView[]>([]);
-    const [hasAttemptedJoin, setHasAttemptedJoin] = useState(false);
+    const [joined, setJoined] = useState(false);
     const [guestName, setGuestName] = useState('');
 
-    // Read browser-only sessionStorage after hydration to determine host/guest state
     useEffect(() => {
-        const isHost = typeof window !== 'undefined' && sessionStorage.getItem('isCreatingGame') === 'true';
-        if (isHost) {
-            setHasAttemptedJoin(true);
-            sessionStorage.removeItem('isCreatingGame');
-        }
-
-        // Pre-fill guest name if it exists
-        if (typeof window !== 'undefined') {
-            setGuestName(sessionStorage.getItem('playerName') || '');
-        }
-    }, []);
+        setJoined(sessionStorage.getItem('joinedLobby') === gameCode);
+        setGuestName(sessionStorage.getItem('playerName') || '');
+        return () => { joinRequest.current?.abort(); };
+    }, [gameCode]);
+    const [joining, setJoining] = useState(false);
+    const joinRequest = useRef<AbortController | null>(null);
+    const autoJoinAttempted = useRef(false);
 
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const { user, profile } = useAuth();
+    const { user, profile, multiplayerConnected, requireServer } = useAuth();
     const { showAlert } = useAlert();
     const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
     const [category, setCategory] = useState<string>('');
@@ -85,7 +81,11 @@ export default function LobbyPage() {
     const [revealedAnswer, setRevealedAnswer] = useState<string | null>(null);
     const [everyoneAnswered, setEveryoneAnswered] = useState(false);
     const [showGameOver, setShowGameOver] = useState(false);
-    const [winner, setWinner] = useState<PlayerView | null>(null);
+    const winners = useMemo(() => {
+        const max = Math.max(...players.map(p => p.score || 0));
+        return players.filter(p => (p.score || 0) === max);
+    }, [players]);
+    const [starting, setStarting] = useState(false);
     const [isTransitioning, setIsTransitioning] = useState(false);
 
     const maxPlayers = 8;
@@ -110,23 +110,37 @@ export default function LobbyPage() {
         }
     }, []);
 
-    // Handle automatic joining for logged-in users
-    useEffect(() => {
-        // This effect runs when the component mounts or when user/profile changes (e.g., after login).
-        if (gameCode && user && profile && !hasAttemptedJoin) {
-            const playerIsAlreadyInLobby = players.some((p) => p.id === socket.id);
-
-            if (!playerIsAlreadyInLobby && players.length < maxPlayers) {
-                const player = {
-                    name: profile.username,
-                    avatar: profile.avatar_url,
-                };
-                sessionStorage.setItem('playerName', player.name || '');
-                socket.emit('join-game', { gameCode, player });
-                setHasAttemptedJoin(true);
+    const joinLobby = useCallback(async () => {
+        if (joinRequest.current || !requireServer(true)) return;
+        const name = profile?.username?.trim() || guestName.trim();
+        if (!name) return;
+        const controller = new AbortController();
+        joinRequest.current = controller;
+        setJoining(true);
+        try {
+            await requestLobby('join-game', { gameCode, player: { name, avatar: profile?.avatar_url || null } }, controller.signal);
+            sessionStorage.setItem('playerName', name);
+            sessionStorage.setItem('joinedLobby', gameCode);
+            setJoined(true);
+            socket.emit('get-state', gameCode);
+        } catch (error) {
+            if (!controller.signal.aborted) {
+                setJoined(false);
+                showAlert(error instanceof Error ? error.message : 'Could not join the lobby.');
             }
+        } finally {
+            if (!controller.signal.aborted) setJoining(false);
+            joinRequest.current = null;
         }
-    }, [gameCode, user, profile, hasAttemptedJoin, players, maxPlayers]);
+    }, [gameCode, profile, guestName, requireServer, showAlert]);
+
+    useEffect(() => {
+        if (!multiplayerConnected) { autoJoinAttempted.current = false; return; }
+        if (user && !joined && !autoJoinAttempted.current) {
+            autoJoinAttempted.current = true;
+            void joinLobby();
+        }
+    }, [multiplayerConnected, user, joined, joinLobby]);
 
     useEffect(() => {
         const triviaApiCategories = [
@@ -145,7 +159,10 @@ export default function LobbyPage() {
     }, []);
 
     useEffect(() => {
-        const onUpdate = (list: PlayerView[]) => setPlayers(list);
+        const onUpdate = (list: PlayerView[]) => {
+            setPlayers(list);
+            if (list.some(p => p.id === socket.id)) setJoined(true);
+        };
         const onQuestion = (q: Question) => {
             if (recoveryTimerRef.current) {
                 window.clearTimeout(recoveryTimerRef.current);
@@ -160,23 +177,36 @@ export default function LobbyPage() {
             setIsTransitioning(false);
             setIsRevealPhase(false);
             setShowGameOver(false);
-            setWinner(null);
             setInGame(true);
             setCurrentQuestion(q);
             setTimeLeft(q.endTime ? Math.max(0, Math.ceil((q.endTime - Date.now()) / 1000)) : 0);
         };
-        const onState = (payload: { players?: PlayerView[]; question?: Question; timeLeft?: number; myAnswer?: string }) => {
-            if (payload.players) setPlayers(payload.players);
+        const onState = (payload: { players?: PlayerView[]; question?: Question; timeLeft?: number; myAnswer?: string; phase?: string; settings?: { category?: string; difficulty?: string; amount: number; timeLimit: number | null } }) => {
+            if (payload.players) onUpdate(payload.players);
+            if (payload.phase) setStarting(payload.phase === 'loading');
+            if (payload.phase !== 'reveal' && revealTimerRef.current) {
+                window.clearInterval(revealTimerRef.current);
+                revealTimerRef.current = null;
+            }
+            if (payload.settings && ['loading', 'question', 'reveal'].includes(payload.phase || '')) {
+                setCategory(payload.settings.category || ''); setDifficulty(payload.settings.difficulty || '');
+                setAmount(payload.settings.amount); setIsTimeLimitEnabled(payload.settings.timeLimit !== null);
+                setTimeLimit(payload.settings.timeLimit || 15);
+            }
+            if (payload.phase === 'lobby' || payload.phase === 'loading') { setInGame(false); setShowGameOver(false); setCurrentQuestion(null); }
             if (payload.question) {
                 if (recoveryTimerRef.current) {
                     window.clearTimeout(recoveryTimerRef.current);
                     recoveryTimerRef.current = null;
                 }
-                setRevealedAnswer(null);
+                setIsRevealPhase(payload.phase === 'reveal');
+                setIsTransitioning(payload.phase === 'reveal');
+                if (payload.phase !== 'reveal') setRevealedAnswer(null);
+                setShowGameOver(false);
                 setInGame(true);
                 setCurrentQuestion(payload.question);
                 setTimeLeft(payload.question.endTime ? Math.max(0, Math.ceil((payload.question.endTime - Date.now()) / 1000)) : 0);
-                setSelectedAnswer((prev) => payload.myAnswer ?? prev);
+                setSelectedAnswer(payload.myAnswer ?? null);
             }
         };
         const onQuestionEnded = async (payload: { players?: PlayerView[]; correctAnswer?: string; transitionEnd?: number }) => {
@@ -248,21 +278,12 @@ export default function LobbyPage() {
             setEveryoneAnswered(true);
         };
         const onGameOver = async (payload: { players?: PlayerView[] }) => {
-            if (payload.players) {
-                setPlayers(payload.players);
-                if (payload.players.length > 0) {
-                    const sortedPlayers = [...payload.players].sort((a, b) => (b.score || 0) - (a.score || 0));
-                    setWinner(sortedPlayers[0]);
-                } else {
-                    setWinner(null);
-                }
-            } else {
-                setPlayers([]);
-                setWinner(null);
-            }
+            setPlayers(payload.players || []);
             setInGame(false);
             setCurrentQuestion(null);
             setShowGameOver(true);
+            setStarting(false);
+            if (recoveryTimerRef.current) { window.clearTimeout(recoveryTimerRef.current); recoveryTimerRef.current = null; }
             setTimeLeft(0);
             setSelectedAnswer(null);
             setRevealedAnswer(null);
@@ -280,10 +301,16 @@ export default function LobbyPage() {
 
         };
 
-        const onError = (message: string) => showAlert(message, 'error');
+        const onError = (message: string) => { setStarting(false); showAlert(message, 'error'); };
+        const onJoinError = (message: string) => {
+            setJoined(false); sessionStorage.removeItem('joinedLobby');
+            if (!joinRequest.current) showAlert(message, 'error');
+        };
+        const onStarted = () => setStarting(false);
         const onConnectionError = (error: Error) => showAlert(error.message, 'error');
         socket.on('start-error', onError);
-        socket.on('join-error', onError);
+        socket.on('join-error', onJoinError);
+        socket.on('game-started', onStarted);
         socket.on('stats-error', onError);
         socket.on('connect_error', onConnectionError);
         socket.on('update-players', onUpdate);
@@ -293,17 +320,10 @@ export default function LobbyPage() {
         socket.on('question-ended', onQuestionEnded);
         socket.on('game-over', onGameOver);
 
-        const onReconnect = () => {
-            if (gameCode) {
-                socket.emit('get-state', gameCode);
-                socket.emit('get-players', gameCode);
-            }
-        };
-        socket.on('connect', onReconnect);
-
         return () => {
             socket.off('start-error', onError);
-            socket.off('join-error', onError);
+            socket.off('join-error', onJoinError);
+            socket.off('game-started', onStarted);
             socket.off('stats-error', onError);
             socket.off('connect_error', onConnectionError);
             socket.off('update-players', onUpdate);
@@ -312,7 +332,6 @@ export default function LobbyPage() {
             socket.off('all-answered', onAllAnswered);
             socket.off('question-ended', onQuestionEnded);
             socket.off('game-over', onGameOver);
-            socket.off('connect', onReconnect);
 
             if (recoveryTimerRef.current) {
                 window.clearTimeout(recoveryTimerRef.current);
@@ -327,7 +346,7 @@ export default function LobbyPage() {
 
     useEffect(() => {
         const handleVisibilityChange = () => {
-            if (!document.hidden && gameCode && !isTransitioning) {
+            if (!document.hidden && gameCode && socket.connected && !isTransitioning) {
                 socket.emit('get-state', gameCode);
             }
         };
@@ -336,11 +355,8 @@ export default function LobbyPage() {
     }, [gameCode, isTransitioning]);
 
     useEffect(() => {
-        if (gameCode) {
-            socket.emit('get-players', gameCode);
-            socket.emit('get-state', gameCode);
-        }
-    }, [gameCode]);
+        if (gameCode && multiplayerConnected) socket.emit('get-state', gameCode);
+    }, [gameCode, multiplayerConnected]);
 
     useEffect(() => {
         if (isRevealPhase) return;
@@ -378,7 +394,8 @@ export default function LobbyPage() {
      * Applies selected category, difficulty, and time limit options.
      */
     const handleStart = () => {
-        if (!isHost || !gameCode) return;
+        if (!isHost || !gameCode || starting || !requireServer(true)) return;
+        setStarting(true);
         const settings = {
             category: category || undefined,
             difficulty: difficulty || undefined,
@@ -395,7 +412,7 @@ export default function LobbyPage() {
      */
     const handleSubmitAnswer = (answer: string) => {
         if (!gameCode || currentQuestion?.index == null || (currentQuestion?.timeLimit && timeLeft <= 0)) return;
-        if (selectedAnswer) return;
+        if (selectedAnswer || !requireServer(true)) return;
         setSelectedAnswer(answer);
         socket.emit('submit-answer', { gameCode, answer, questionIndex: currentQuestion.index });
     };
@@ -404,29 +421,16 @@ export default function LobbyPage() {
      * Leaves the current multiplayer session and returns the user to the landing page.
      */
     const handleLeave = () => {
-        if (gameCode) socket.emit('leave-game', { gameCode });
+        if (gameCode && socket.connected) socket.emit('leave-game', { gameCode });
+        sessionStorage.removeItem('joinedLobby');
         router.push('/');
     };
 
     const handleStayInLobby = () => {
         setShowGameOver(false);
-        setWinner(null);
     };
 
-    const handleGuestJoin = () => {
-        if (guestName.trim()) {
-            sessionStorage.setItem('playerName', guestName.trim());
-            const player = {
-                name: guestName.trim(),
-                avatar: null,
-            };
-            socket.emit('join-game', { gameCode, player });
-            setHasAttemptedJoin(true);
-        }
-    };
-
-    // This condition now correctly handles all cases
-    const needsToJoin = !user && !hasAttemptedJoin;
+    const needsToJoin = !joined;
 
     if (needsToJoin) {
         return (
@@ -446,17 +450,17 @@ export default function LobbyPage() {
                         onChange={(e) => setGuestName(e.target.value)}
                         onKeyPress={(e) => {
                             if (e.key === 'Enter' && guestName.trim()) {
-                                handleGuestJoin();
+                                void joinLobby();
                             }
                         }}
                     />
 
                     <button
-                        onClick={handleGuestJoin}
-                        disabled={!guestName.trim()}
+                        onClick={() => void joinLobby()}
+                        disabled={joining || (!profile?.username && !guestName.trim())}
                         className="w-full h-14 rounded-md bg-green-800 hover:bg-green-900 text-white text-xl font-bold disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors"
                     >
-                        Join Game
+                        {joining ? 'Joining…' : 'Join Game'}
                     </button>
 
                     <button onClick={() => router.push('/')} className="w-full h-12 rounded-md bg-gray-700 hover:bg-gray-800 text-white font-bold cursor-pointer transition-colors">
@@ -486,25 +490,18 @@ export default function LobbyPage() {
         return (
             <div className="flex h-screen flex-col items-center justify-center bg-[#1A201A] text-white p-4">
                 <h1 className="text-4xl font-bold mb-4">Game Over!</h1>
-                {winner && (
-                    <div className="text-center">
-                        <h2 className="text-2xl mb-4">Winner:</h2>
-                        {winner.avatar ? (
-                            <Image src={winner.avatar} alt={winner.name} width={128} height={128} className="rounded-full mx-auto mb-4" />
-                        ) : (
-                            <div className="w-32 h-32 rounded-full bg-green-800 flex items-center justify-center text-5xl font-bold mx-auto mb-4">
-                                {(winner.name?.charAt(0) ?? '?').toUpperCase()}
-                            </div>
-                        )}
-                        <p className="text-3xl font-bold text-green-400">{winner.name}</p>
+                <div className="text-center">
+                    <h2 className="text-2xl mb-4">{winners.length > 1 ? 'Tie! Winners:' : 'Winner:'}</h2>
+                    <div className="flex flex-wrap justify-center gap-6">
+                        {winners.map(winner => <div key={winner.id}>
+                            {winner.avatar ? <Image src={winner.avatar} alt={winner.name} width={96} height={96} className="rounded-full mx-auto mb-4" />
+                                : <div className="w-24 h-24 rounded-full bg-green-800 flex items-center justify-center text-4xl font-bold mx-auto mb-4">{winner.name.charAt(0).toUpperCase()}</div>}
+                            <p className="text-2xl font-bold text-green-400">{winner.name}</p>
+                            <p>{winner.score || 0} pts</p>
+                        </div>)}
                     </div>
-                )}
-                {currentPlayer && winner && currentPlayer.id !== winner.id && (
-                    <div className="mt-8 text-center">
-                        <h3 className="text-xl">Your Stats:</h3>
-                        <p>Score: {currentPlayer.score}</p>
-                    </div>
-                )}
+                </div>
+                {currentPlayer && !winners.some(p => p.id === currentPlayer.id) && <div className="mt-8 text-center"><h3 className="text-xl">Your Stats:</h3><p>Score: {currentPlayer.score}</p></div>}
                 <div className="flex gap-4 mt-8">
                     <button onClick={handleStayInLobby} className="px-8 py-3 rounded-full bg-blue-700 hover:bg-blue-800 text-lg font-bold cursor-pointer">
                         Stay in Lobby
@@ -632,9 +629,10 @@ export default function LobbyPage() {
                                     </button>
                                     <button
                                         onClick={handleStart}
+                                        disabled={starting || !multiplayerConnected}
                                         className="flex-1 h-12 sm:h-14 rounded-md bg-green-800 text-base sm:text-xl font-bold hover:bg-green-900 cursor-pointer"
                                     >
-                                        Start Game
+                                        {starting ? 'Loading questions…' : 'Start Game'}
                                     </button>
                                 </div>
                             </div>

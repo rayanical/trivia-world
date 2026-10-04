@@ -22,6 +22,18 @@ routes.use((req, res, next) => {
 });
 routes.get('/config', (_req, res) => res.json({ googleEnabled }));
 
+routes.get('/avatars/:userId', async (req, res) => {
+    const matchingVersion = /^"([^"]+)"$/.exec(req.get('if-none-match') || '')?.[1] || null;
+    const result = await db.query('SELECT CASE WHEN version = $2 THEN NULL ELSE data END AS data, content_type, version FROM avatars WHERE user_id = $1', [req.params.userId, matchingVersion]);
+    const avatar = result.rows[0];
+    if (!avatar) return void res.sendStatus(404);
+    const etag = `"${avatar.version}"`;
+    res.set({ 'Content-Type': avatar.content_type, 'X-Content-Type-Options': 'nosniff', ETag: etag, 'Cache-Control': 'public, max-age=3600, must-revalidate' });
+    if (req.get('if-none-match') === etag) return void res.sendStatus(304);
+    res.send(avatar.data);
+});
+
+
 routes.use(async (req, res, next) => {
     try {
         res.locals.session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
@@ -93,16 +105,6 @@ routes.post('/avatar', express.raw({ type: 'image/*', limit: '2mb' }), async (re
     } finally { client.release(); }
 });
 
-routes.get('/avatars/:userId', async (req, res) => {
-    const result = await db.query('SELECT data, content_type, version FROM avatars WHERE user_id = $1', [req.params.userId]);
-    const avatar = result.rows[0];
-    if (!avatar) return void res.sendStatus(404);
-    const etag = `"${avatar.version}"`;
-    res.set({ 'Content-Type': avatar.content_type, 'X-Content-Type-Options': 'nosniff', ETag: etag, 'Cache-Control': 'public, max-age=3600, must-revalidate' });
-    if (req.get('if-none-match') === etag) return void res.sendStatus(304);
-    res.send(avatar.data);
-});
-
 routes.post('/solo/questions', express.json({ limit: '4kb' }), async (req, res) => {
     const category = req.body?.category;
     const difficulty = req.body?.difficulty;
@@ -117,15 +119,17 @@ routes.post('/solo/questions', express.json({ limit: '4kb' }), async (req, res) 
     try {
         await client.query('BEGIN');
         await client.query('DELETE FROM solo_questions WHERE expires_at < now()');
-        const publicQuestions = [];
-        for (const q of questions) {
+        const rows = questions.map(q => {
             const id = randomUUID();
             const token = randomBytes(32).toString('hex');
             const answers = shuffle([...q.incorrect_answers, q.correct_answer]);
-            await client.query(`INSERT INTO solo_questions (id, user_id, guest_token_hash, difficulty, correct_answer, answers)
-                VALUES ($1, $2, $3, $4, $5, $6)`, [id, userId, userId ? null : hashToken(token), q.difficulty, q.correct_answer, JSON.stringify(answers)]);
-            publicQuestions.push({ id, token: userId ? undefined : token, question: q.question, category: q.category, difficulty: q.difficulty, all_answers: answers });
-        }
+            return { id, token, q, answers };
+        });
+        await client.query(`INSERT INTO solo_questions (id, user_id, guest_token_hash, difficulty, correct_answer, answers)
+            SELECT id::uuid, user_id, guest_token_hash, difficulty, correct_answer, answers
+            FROM jsonb_to_recordset($1::jsonb) AS x(id text, user_id text, guest_token_hash text, difficulty text, correct_answer text, answers jsonb)`,
+            [JSON.stringify(rows.map(({id, token, q, answers}) => ({ id, user_id: userId, guest_token_hash: userId ? null : hashToken(token), difficulty: q.difficulty, correct_answer: q.correct_answer, answers })))]);
+        const publicQuestions = rows.map(({id, token, q, answers}) => ({id, token: userId ? undefined : token, question: q.question, category: q.category, difficulty: q.difficulty, all_answers: answers}));
         await client.query('COMMIT');
         res.json(publicQuestions);
     } catch (error) { await client.query('ROLLBACK'); throw error; }

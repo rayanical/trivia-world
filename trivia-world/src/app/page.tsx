@@ -2,9 +2,9 @@
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { socket } from '../lib/socket';
+import { requestLobby } from '@/lib/lobby-request';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 
@@ -19,8 +19,11 @@ export default function WelcomePage() {
     const [name, setName] = useState('');
     const [gameCode, setGameCode] = useState('');
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const { user, profile, requireServer } = useAuth();
+    const { user, profile, connectMultiplayer } = useAuth();
     const { showAlert } = useAlert();
+    const [pendingLobby, setPendingLobby] = useState<'create' | 'join' | null>(null);
+    const lobbyRequest = useRef<AbortController | null>(null);
+    useEffect(() => () => { lobbyRequest.current?.abort(); }, []);
 
     const resolvePlayerName = () => {
         const profileName = profile?.username?.trim();
@@ -42,74 +45,29 @@ export default function WelcomePage() {
         router.push('/solo');
     };
 
-    /**
-     * Requests creation of a new multiplayer lobby and persists the chosen avatar/name.
-     */
-    const handleCreateMultiplayerGame = () => {
-        if (!requireServer(true)) return;
-        const playerName = resolvePlayerName();
-        const player = {
-            name: playerName,
-            avatar: resolvedAvatar,
-        };
-        sessionStorage.setItem('playerName', player.name);
-
-        // Flag that this user is creating the game (host)
-        sessionStorage.setItem('isCreatingGame', 'true');
-
-        socket.emit('create-game', player);
-    };
-
-    /**
-     * Validates the lobby code and attempts to join an existing multiplayer game.
-     */
-    const handleJoinMultiplayerGame = () => {
-        const playerName = resolvePlayerName();
-        const player = {
-            name: playerName,
-            avatar: resolvedAvatar,
-        };
-
-        if (gameCode) {
-            const validCode = /^[A-Z0-9]{5}$/;
-            if (!validCode.test(gameCode)) {
-                showAlert('Invalid game code format.');
-                return;
-            }
-
-            if (!requireServer(true)) return;
-
+    const enterLobby = async (kind: 'create' | 'join') => {
+        if (lobbyRequest.current) return;
+        if (kind === 'join' && !/^[A-Z0-9]{5}$/.test(gameCode)) {
+            showAlert('Please enter a valid five-character game code.', 'warning');
+            return;
+        }
+        const controller = new AbortController();
+        lobbyRequest.current = controller;
+        setPendingLobby(kind);
+        try {
+            if (!await connectMultiplayer(controller.signal) || controller.signal.aborted) return;
+            const player = { name: resolvePlayerName(), avatar: resolvedAvatar };
+            const code = await requestLobby(kind === 'create' ? 'create-game' : 'join-game', kind === 'create' ? player : { gameCode, player }, controller.signal);
             sessionStorage.setItem('playerName', player.name);
-
-            const onJoinSuccess = ({ gameCode: code }: { gameCode: string }) => {
-                router.push(`/lobby/${code}`);
-                socket.off('join-success', onJoinSuccess);
-                socket.off('join-error', onJoinError);
-            };
-
-            const onJoinError = (msg: string) => {
-                showAlert(msg);
-                socket.off('join-success', onJoinSuccess);
-                socket.off('join-error', onJoinError);
-            };
-
-            socket.on('join-success', onJoinSuccess);
-            socket.on('join-error', onJoinError);
-            socket.emit('join-game', { gameCode, player });
-        } else {
-            showAlert('Please enter a game code.', 'warning');
+            sessionStorage.setItem('joinedLobby', code);
+            router.push(`/lobby/${code}`);
+        } catch (error) {
+            if (!controller.signal.aborted) showAlert(error instanceof Error ? error.message : 'Could not enter the lobby.');
+        } finally {
+            if (!controller.signal.aborted) setPendingLobby(null);
+            lobbyRequest.current = null;
         }
     };
-
-    useEffect(() => {
-        const onGameCreated = (newGameCode: string) => {
-            router.push(`/lobby/${newGameCode}`);
-        };
-        socket.on('game-created', onGameCreated);
-        return () => {
-            socket.off('game-created', onGameCreated);
-        };
-    }, [router]);
 
     return (
         <div className="relative flex min-h-screen w-full flex-col bg-[#101710]">
@@ -168,11 +126,12 @@ export default function WelcomePage() {
                         </button>
 
                         <button
-                            onClick={handleCreateMultiplayerGame}
+                            onClick={() => void enterLobby('create')}
+                            disabled={pendingLobby !== null}
                             className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <span className="material-symbols-outlined text-2xl">groups</span>
-                            <span className="truncate">Create Multiplayer Game</span>
+                            <span className="truncate">{pendingLobby === 'create' ? 'Connecting…' : 'Create Multiplayer Game'}</span>
                         </button>
                     </div>
 
@@ -191,11 +150,11 @@ export default function WelcomePage() {
                             onChange={(e) => setGameCode(e.target.value.toUpperCase())}
                         />
                         <button
-                            onClick={handleJoinMultiplayerGame}
+                            onClick={() => void enterLobby('join')}
                             className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md h-10 px-3 text-xs sm:px-4 sm:text-sm bg-[#16A34A] hover:bg-[#15803D] text-white font-bold cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
-                            disabled={!gameCode || gameCode.length !== 5}
+                            disabled={pendingLobby !== null || !gameCode || gameCode.length !== 5}
                         >
-                            Join Game
+                            {pendingLobby === 'join' ? 'Connecting…' : 'Join Game'}
                         </button>
                     </div>
                 </div>

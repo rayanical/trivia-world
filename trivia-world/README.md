@@ -77,7 +77,9 @@ npm run build
 ```
 
 Integration tests exercise verification/sign-in, profiles, avatar decoding,
-password resets, solo ownership and scoring, and multiplayer statistics.
+password resets, solo batch ownership and scoring, multiplayer statistics,
+join retries, ties, and reconnect recovery. Lobby request tests also verify
+listener cleanup and cancellation.
 They require a **disposable local Postgres database**, reject remote database URLs,
 and mock outgoing emails and the trivia provider. Migrate the test database first,
 then run:

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
-export async function generateMetadata({ params }: { params: { gameCode: string } }): Promise<Metadata> {
-    const gameCode = params.gameCode;
+export async function generateMetadata({ params }: { params: Promise<{ gameCode: string }> }): Promise<Metadata> {
+    const { gameCode } = await params;
     const title = `Join my Trivia World game!`;
     const description = `Click the link to join the lobby. Game Code: ${gameCode}`;
     const imageUrl = 'https://triviaworld.live/og-lobby-image.png';

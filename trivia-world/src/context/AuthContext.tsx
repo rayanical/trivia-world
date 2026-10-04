@@ -4,10 +4,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { authClient } from '@/lib/auth-client';
 import { guestId, socket } from '@/lib/socket';
 import { useAlert } from './AlertContext';
+import { usePathname } from 'next/navigation';
 
 export type Profile = { username: string | null; avatar_url: string | null };
 export type User = { id: string; email: string; name: string; image?: string | null };
-type AuthContextValue = { user: User | null; profile: Profile | null; loading: boolean; refreshProfile: () => Promise<void>; requireServer: (multiplayer?: boolean) => boolean };
+type AuthContextValue = { user: User | null; profile: Profile | null; loading: boolean; refreshProfile: () => Promise<void>; requireServer: (multiplayer?: boolean) => boolean; connectMultiplayer: (signal?: AbortSignal) => Promise<boolean>; multiplayerConnected: boolean };
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -15,6 +16,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { showAlert } = useAlert();
     const [connected, setConnected] = useState(false);
     const token = session?.session.token;
+    const pathname = usePathname();
+    const [multiplayerRequested, setMultiplayerRequested] = useState(false);
+    const wantsMultiplayer = pathname.startsWith('/lobby/') || (pathname === '/' && multiplayerRequested);
+    useEffect(() => { setMultiplayerRequested(false); }, [pathname]);
     const profile = useMemo<Profile | null>(() => session ? { username: session.user.name, avatar_url: session.user.image || null } : null, [session]);
     const refreshProfile = useCallback(async () => { await refetch(); }, [refetch]);
 
@@ -38,11 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
-        if (isPending || error) return;
+        if (isPending || error || !wantsMultiplayer) return;
         socket.auth = { token, guestId: guestId() };
         socket.connect();
         return () => { socket.disconnect(); };
-    }, [isPending, error, token]);
+    }, [isPending, error, token, wantsMultiplayer]);
 
     const requireServer = useCallback((multiplayer = false) => {
         if (!isPending && !error && (!multiplayer || (connected && socket.connected))) return true;
@@ -53,13 +58,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false;
     }, [isPending, error, connected, showAlert]);
 
+    const connectMultiplayer = useCallback(async (signal?: AbortSignal) => {
+        if (signal?.aborted) return false;
+        if (!requireServer()) return false;
+        setMultiplayerRequested(true);
+        socket.auth = { token, guestId: guestId() };
+        if (socket.connected) return true;
+        return new Promise<boolean>((resolve) => {
+            const finish = (ready: boolean) => {
+                clearTimeout(timer);
+                socket.off('connect', onConnect);
+                socket.off('connect_error', onError);
+                signal?.removeEventListener('abort', onAbort);
+                if (!ready) {
+                    setMultiplayerRequested(false);
+                    socket.disconnect();
+                    if (!signal?.aborted) showAlert('Could not connect to the game server. Please try again shortly.', 'warning');
+                }
+                resolve(ready);
+            };
+            const onAbort = () => finish(false);
+            const onConnect = () => finish(true);
+            const onError = () => finish(false);
+            const timer = setTimeout(onError, 15_000);
+            signal?.addEventListener('abort', onAbort, { once: true });
+            socket.once('connect', onConnect);
+            socket.once('connect_error', onError);
+            socket.connect();
+        });
+    }, [requireServer, token, showAlert]);
+
     const value = useMemo<AuthContextValue>(() => ({
         user: session?.user || null,
         profile,
         loading: isPending,
         refreshProfile,
         requireServer,
-    }), [session, profile, isPending, refreshProfile, requireServer]);
+        connectMultiplayer,
+        multiplayerConnected: connected,
+    }), [session, profile, isPending, refreshProfile, requireServer, connectMultiplayer, connected]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

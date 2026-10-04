@@ -102,7 +102,12 @@ test('avatar bytes are validated, stored, and cached; a failed upload retains th
     const avatar = await fetch(`${base}${url}`);
     expect(avatar.headers.get('content-type')).toContain('image/webp');
     expect((await sharp(Buffer.from(await avatar.arrayBuffer())).metadata()).width).toBe(256);
-    expect((await fetch(`${base}${url}`, { headers: { 'If-None-Match': avatar.headers.get('etag')! } })).status).toBe(304);
+    const cached = await fetch(`${base}${url}`, { headers: { 'If-None-Match': avatar.headers.get('etag')! } });
+    expect(cached.status).toBe(304);
+    expect(await cached.text()).toBe('');
+    const unquotedTag = await fetch(`${base}${url}`, {headers: {'If-None-Match':avatar.headers.get('etag')!.replaceAll('"','')}});
+    expect(unquotedTag.status).toBe(200);
+    expect((await unquotedTag.arrayBuffer()).byteLength).toBeGreaterThan(0);
     const invalid = await fetch(`${base}/api/avatar`, { method: 'POST', headers: { Origin: 'http://localhost:3000', Cookie: cookie, 'Content-Type': 'image/png' }, body: 'not an image' });
     expect(invalid.status).toBe(400);
     expect((await fetch(`${base}${url}`)).ok).toBe(true);
@@ -110,7 +115,9 @@ test('avatar bytes are validated, stored, and cached; a failed upload retains th
 
 test('solo answers are server scored and retries increment stats only once', async () => {
     const response = await post('/api/solo/questions', { difficulty: 'easy' });
-    const [question] = await response.json();
+    const batch = await response.json();
+    expect(batch).toHaveLength(10);
+    const [question] = batch;
     expect(question.correct_answer).toBeUndefined();
     expect((await post('/api/solo/answer', { id: question.id, answer: '4' }, '')).status).toBe(404);
     expect((await post('/api/solo/answer', { id: question.id, answer: 'not offered' })).status).toBe(400);
@@ -125,7 +132,9 @@ test('solo answers are server scored and retries increment stats only once', asy
 });
 
 test('guest solo questions use an owner token without creating account statistics', async () => {
-    const [question] = await (await post('/api/solo/questions', {}, '')).json();
+    const batch = await (await post('/api/solo/questions', {}, '')).json();
+    expect(batch).toHaveLength(10);
+    const question = batch[batch.length - 1];
     expect((await post('/api/solo/answer', { id: question.id, answer: '4' }, '')).status).toBe(404);
     expect((await post('/api/solo/answer', { id: question.id, token: question.token, answer: '4' }, '')).ok).toBe(true);
 });
@@ -162,3 +171,61 @@ test('multiplayer hides answers and saves authenticated results once per match',
     expect(stats.multiplayer_questions_correct).toBe(1);
     expect(stats.multiplayer_games_played).toBe(1);
 }, 40_000);
+
+test('reconnect restores the reveal question, then clears the old answer on the next question', async () => {
+    const guest = randomUUID();
+    const host = await connect({ guestId: guest });
+    const created = event<string>(host, 'game-created');
+    host.emit('create-game', { name: 'Reconnect' });
+    const code = await created;
+    const first = event<{index: number}>(host, 'question');
+    host.emit('start-game', { gameCode: code, settings: { amount: 2, timeLimit: null } });
+    const question = await first;
+    const revealed = event(host, 'question-ended');
+    host.emit('submit-answer', { gameCode: code, questionIndex: question.index, answer: '4' });
+    await revealed;
+    host.disconnect();
+    const restored = await connect({ guestId: guest });
+    type State = {phase: string; question?: {index: number; correct_answer?: string}; myAnswer?: string; players: {id: string}[]};
+    const revealState = event<State>(restored, 'state');
+    restored.emit('get-state', code);
+    const state = await revealState;
+    expect(state.phase).toBe('reveal');
+    expect(state.question?.index).toBe(0);
+    expect(state.myAnswer).toBe('4');
+    expect(state.players.some(p => p.id === restored.id)).toBe(true);
+    await event(restored, 'question');
+    const nextState = event<State>(restored, 'state');
+    restored.emit('get-state', code);
+    const next = await nextState;
+    expect(next.phase).toBe('question');
+    expect(next.question?.index).toBe(1);
+    expect(next.question?.correct_answer).toBeUndefined();
+    expect(next.myAnswer).toBeUndefined();
+    restored.emit('leave-game', {gameCode: code});
+}, 15_000);
+
+test('guest joins can retry after rejection and tied scores survive state recovery', async () => {
+    const host = await connect({guestId: randomUUID()});
+    const guest = await connect({guestId: randomUUID()});
+    const rejected = event<string>(guest, 'join-error');
+    guest.emit('join-game', {gameCode: 'INVALID', player: {name: 'Guest'}});
+    expect(await rejected).toContain('not found');
+    const created = event<string>(host, 'game-created');
+    host.emit('create-game', {name: 'Host'});
+    const code = await created;
+    const joined = event<{gameCode: string}>(guest, 'join-success');
+    guest.emit('join-game', {gameCode: code, player: {name: 'Guest'}});
+    expect((await joined).gameCode).toBe(code);
+    const first = event<{index: number}>(host, 'question');
+    host.emit('start-game', {gameCode: code, settings: {amount: 1, timeLimit: null}});
+    const question = await first;
+    const over = event<{players: {score: number}[]}>(host, 'game-over');
+    host.emit('submit-answer', {gameCode: code, questionIndex: question.index, answer: '4'});
+    guest.emit('submit-answer', {gameCode: code, questionIndex: question.index, answer: '4'});
+    expect((await over).players.map(p => p.score)).toEqual([1,1]);
+    const state = event<{phase: string; players: {score: number}[]}>(guest, 'state');
+    guest.emit('get-state', code);
+    expect((await state).phase).toBe('finished');
+    host.emit('leave-game', {gameCode: code}); guest.emit('leave-game', {gameCode: code});
+}, 15_000);
