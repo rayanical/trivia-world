@@ -1,515 +1,296 @@
-// server.ts
 import express from 'express';
-import http from 'http';
-import { Server } from 'socket.io';
+import http from 'node:http';
+import { randomUUID } from 'node:crypto';
+import { Server, type Socket } from 'socket.io';
 import cors from 'cors';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './src/server/auth';
+import { db } from './src/server/db';
+import { trustedOrigins } from './src/server/config';
+import { routes } from './src/server/routes';
+import { fetchQuestions, shuffle, type Question } from './src/server/trivia';
+import { recordGame, recordQuestion } from './src/server/stats';
 
-// Define types for our game state for better code quality
 interface Player {
     id: string;
+    key: string;
+    userId?: string;
     name: string;
+    avatar: string | null;
     score: number;
-    avatar?: string | null;
-    // optional runtime fields
     lastAnswer?: string;
-    lastAnswerTs?: number;
+    disconnected?: boolean;
+    removalTimer?: ReturnType<typeof setTimeout>;
 }
-
+interface Settings { category?: string; difficulty?: string; amount: number; timeLimit: number | null }
 interface Game {
+    id: string;
     players: Player[];
     host: string;
-    // Game runtime state
-    settings?: {
-        category?: string;
-        difficulty?: string;
-        amount?: number;
-        timeLimit?: number | null;
-    };
-    currentQuestionIndex?: number;
+    settings?: Settings;
     questions?: Question[];
-    active?: boolean;
-    timer?: NodeJS.Timeout | null;
-    // when the current question is expected to end (ms since epoch)
-    questionEndAt?: number | null;
-    evaluating?: boolean;
-    currentAllAnswers?: string[];
+    index: number;
+    phase: 'lobby' | 'loading' | 'question' | 'reveal' | 'finished';
+    answers: string[];
+    endAt: number | null;
+    correctAnswer?: string;
+    transitionEnd?: number;
+    timer?: ReturnType<typeof setTimeout>;
 }
 
-type Question = {
-    category?: string;
-    type?: string;
-    difficulty?: string;
-    question: string;
-    correct_answer: string;
-    incorrect_answers: string[];
-};
-
-type TriviaApiQuestionResponse = {
-    category: string;
-    question: { text: string };
-    difficulty: string;
-    correctAnswer: string;
-    incorrectAnswers: string[];
-};
-
 const app = express();
-app.use(cors());
-app.get('/', (req, res) => {
-    res.send('Trivia World Backend is running!');
+app.use(cors({ origin: trustedOrigins, credentials: true }));
+app.all('/api/auth/*splat', toNodeHandler(auth));
+app.use('/api', routes);
+app.get('/', (_req, res) => res.send('Trivia World Backend is running!'));
+app.get('/health', async (_req, res) => {
+    try { await db.query('SELECT 1'); res.json({ ok: true }); }
+    catch { res.status(503).json({ ok: false }); }
+});
+app.use((error: Error & { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    void _next; // Express recognizes an error handler by its four arguments.
+    const status = error.status || 500;
+    if (status >= 500) console.error('Request failed', error.message);
+    res.status(status).json({ error: status === 413 ? 'File is too large. Maximum upload size is 2 MB.' : 'Request failed. Please try again.' });
 });
 const server = http.createServer(app);
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000').split(',');
-
 const io = new Server(server, {
-    cors: {
-        origin: allowedOrigins,
-        methods: ['GET', 'POST'],
-    },
-    pingTimeout: 60000,
+    cors: { origin: trustedOrigins, credentials: true },
+    allowRequest: (req, callback) => callback(null, !req.headers.origin || trustedOrigins.includes(req.headers.origin)),
+    pingTimeout: 60_000,
+    maxHttpBufferSize: 16_384,
 });
-// In-memory storage for game states using a typed record
-const games: Record<string, Game> = {};
+const games = new Map<string, Game>();
+const publicPlayers = (game: Game) => game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar, answered: Boolean(p.lastAnswer), disconnected: Boolean(p.disconnected) }));
+const pendingStats = new Set<Promise<void>>();
 
-/**
- * Establishes per-socket handlers for multiplayer trivia gameplay coordination.
- * @param socket - Connected Socket.IO client instance.
- */
+function persist(game: Game, write: () => Promise<void>) {
+    const job = (async () => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try { await write(); return; }
+            catch (error) {
+                if (attempt === 2) {
+                    console.error('Could not save game statistics', error instanceof Error ? error.message : 'Database error');
+                    io.to(findCode(game)).emit('stats-error', 'Some statistics could not be saved.');
+                } else await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            }
+        }
+    })();
+    pendingStats.add(job);
+    void job.finally(() => pendingStats.delete(job));
+}
+function findCode(game: Game) { return [...games].find(([, value]) => value === game)?.[0] || ''; }
+function broadcast(code: string, game: Game) { io.to(code).emit('update-players', publicPlayers(game)); }
+function destroyGame(code: string, game: Game) {
+    clearTimeout(game.timer);
+    for (const player of game.players) clearTimeout(player.removalTimer);
+    games.delete(code);
+}
+function removePlayer(code: string, game: Game, key: string) {
+    const player = game.players.find((p) => p.key === key);
+    if (!player) return;
+    clearTimeout(player.removalTimer);
+    game.players = game.players.filter((p) => p !== player);
+    if (!game.players.length) return destroyGame(code, game);
+    if (game.host === player.id) game.host = game.players[0].id;
+    broadcast(code, game);
+    if (game.phase === 'question' && game.players.every((p) => p.disconnected || p.lastAnswer)) evaluate(code, game);
+}
+function sendQuestion(code: string, game: Game) {
+    if (games.get(code) !== game) return;
+    const question = game.questions?.[game.index];
+    if (!question) {
+        game.phase = 'finished';
+        game.endAt = null;
+        const max = Math.max(...game.players.map((p) => p.score));
+        for (const player of game.players) if (player.userId) {
+            persist(game, () => recordGame(db, player.userId!, `game:${game.id}`, player.score === max));
+        }
+        io.to(code).emit('game-over', { players: publicPlayers(game) });
+        return;
+    }
+    game.phase = 'question';
+    game.correctAnswer = undefined;
+    game.transitionEnd = undefined;
+    game.answers = shuffle([...question.incorrect_answers, question.correct_answer]);
+    for (const player of game.players) delete player.lastAnswer;
+    game.endAt = game.settings?.timeLimit ? Date.now() + game.settings.timeLimit * 1000 : null;
+    io.to(code).emit('question', publicQuestion(game));
+    clearTimeout(game.timer);
+    if (game.endAt) game.timer = setTimeout(() => evaluate(code, game), game.endAt - Date.now());
+}
+function publicQuestion(game: Game) {
+    const question = game.questions![game.index];
+    return { index: game.index, question: question.question, category: question.category, difficulty: question.difficulty,
+        all_answers: game.answers, timeLimit: game.settings?.timeLimit, endTime: game.endAt };
+}
+function evaluate(code: string, game: Game) {
+    if (games.get(code) !== game || game.phase !== 'question') return;
+    clearTimeout(game.timer);
+    game.phase = 'reveal';
+    const question = game.questions![game.index];
+    for (const player of game.players) {
+        const correct = player.lastAnswer === question.correct_answer;
+        if (correct) player.score++;
+        if (player.userId && player.lastAnswer) {
+            const userId = player.userId;
+            const eventId = `question:${game.id}:${game.index}`;
+            persist(game, () => recordQuestion(db, userId, eventId, 'multiplayer', question.difficulty, correct));
+        }
+    }
+    game.correctAnswer = question.correct_answer;
+    game.endAt = null;
+    game.transitionEnd = Date.now() + 3000;
+    io.to(code).emit('question-ended', { correctAnswer: game.correctAnswer, players: publicPlayers(game), transitionEnd: game.transitionEnd });
+    game.timer = setTimeout(() => { game.index++; sendQuestion(code, game); }, 3000);
+}
+
+io.use(async (socket, next) => {
+    try {
+        const token = socket.handshake.auth?.token;
+        if (token !== undefined && typeof token !== 'string') return next(new Error('Invalid session.'));
+        const session = token ? await auth.api.getSession({ headers: new Headers({ Authorization: `Bearer ${token}` }) }) : null;
+        if (token && !session) return next(new Error('Your session expired. Please sign in again.'));
+        socket.data.user = session?.user;
+        const guestId = socket.handshake.auth?.guestId;
+        socket.data.key = session ? `user:${session.user.id}` : `guest:${typeof guestId === 'string' && /^[0-9a-f-]{36}$/i.test(guestId) ? guestId : randomUUID()}`;
+        next();
+    } catch { next(new Error('Unable to verify your session. Please reconnect.')); }
+});
+
+function restorePlayer(socket: Socket, game: Game, code: string) {
+    const player = game.players.find((p) => p.key === socket.data.key);
+    if (!player) return;
+    if (player.id !== socket.id) {
+        const oldSocket = io.sockets.sockets.get(player.id);
+        if (oldSocket) { oldSocket.leave(code); oldSocket.emit('join-error', 'Your player joined from another connection.'); }
+        if (game.host === player.id) game.host = socket.id;
+        player.id = socket.id;
+    }
+    clearTimeout(player.removalTimer);
+    player.disconnected = false;
+    socket.join(code);
+    return player;
+}
+
 io.on('connection', (socket) => {
-    /**
-     * Socket.io event: Creates a new multiplayer trivia game.
-     * @event create-game
-     * @param player - Initial player payload containing name and avatar URL.
-     * @emits game-created - Returns the generated lobby code to the host.
-     * @emits update-players - Shares the initial player roster with the room.
-     */
-    socket.on('create-game', (player: { name: string; avatar: string | null }) => {
-        const gameCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-        socket.join(gameCode);
-
-        games[gameCode] = {
-            players: [{ id: socket.id, name: player.name, score: 0, avatar: player.avatar }],
-            host: socket.id,
-        };
-
-        // Let the creator know the game was successfully created
-        socket.emit('game-created', gameCode);
-        // Broadcast the initial player list to the room (creator only right now)
-        io.to(gameCode).emit('update-players', games[gameCode].players);
+    let events = 0;
+    let windowStart = Date.now();
+    socket.use((_packet, next) => {
+        if (Date.now() - windowStart > 60_000) { events = 0; windowStart = Date.now(); }
+        next(++events > 180 ? new Error('Too many requests.') : undefined);
     });
-
-    /**
-     * Socket.io event: Allows a player to join an existing multiplayer lobby.
-     * @event join-game
-     * @param payload.gameCode - Target lobby identifier provided by the client.
-     * @param payload.player - Joining player's display name and avatar URL.
-     * @emits update-players - Shares the refreshed roster with lobby members.
-     * @emits join-success - Confirms successful entry to the requesting client.
-     * @emits join-error - Indicates that the requested lobby does not exist.
-     */
-    socket.on('join-game', ({ gameCode, player }: { gameCode: string; player: { name: string; avatar: string | null } }) => {
-        const game = games[gameCode];
-        if (game) {
-            socket.join(gameCode);
-            // Avoid adding the same socket twice
-            const alreadyPresent = game.players.some((p) => p.id === socket.id);
-            if (!alreadyPresent) {
-                game.players.push({ id: socket.id, name: player.name, score: 0, avatar: player.avatar });
-            }
-
-            // Notify everyone in the room about the updated player list
-            io.to(gameCode).emit('update-players', game.players);
-
-            // Confirm to the joining socket that join succeeded
-            socket.emit('join-success', { gameCode });
-        } else {
-            socket.emit('join-error', 'Game not found. Please check the code.');
+    const makePlayer = (payload: unknown): Player | null => {
+        const user = socket.data.user;
+        const name = user?.name || (payload && typeof payload === 'object' && 'name' in payload && typeof payload.name === 'string' ? payload.name.trim() : '');
+        if (!name || name.length > 100) return null;
+        return { id: socket.id, key: socket.data.key, userId: user?.id, name: name.slice(0, 15), avatar: user?.image || null, score: 0 };
+    };
+    socket.on('create-game', (payload: unknown) => {
+        const player = makePlayer(payload);
+        if (!player) return socket.emit('join-error', 'Choose a player name.');
+        if ([...games.values()].filter((g) => g.players.some((p) => p.key === player.key)).length >= 3 || games.size >= 1000) return socket.emit('join-error', 'Too many active lobbies. Leave an existing lobby first.');
+        let code: string;
+        do { code = randomUUID().replaceAll('-', '').slice(0, 5).toUpperCase(); } while (games.has(code));
+        const game: Game = { id: randomUUID(), players: [player], host: socket.id, index: 0, phase: 'lobby', answers: [], endAt: null };
+        games.set(code, game);
+        socket.join(code);
+        socket.emit('game-created', code);
+        broadcast(code, game);
+    });
+    socket.on('join-game', (payload) => {
+        const code = payload?.gameCode;
+        const game = typeof code === 'string' ? games.get(code) : undefined;
+        if (!game) return socket.emit('join-error', 'Game not found. Please check the code.');
+        if (!restorePlayer(socket, game, code)) {
+            if (game.players.length >= 8 || !['lobby', 'finished'].includes(game.phase)) return socket.emit('join-error', 'This lobby is full or the game has already started.');
+            const player = makePlayer(payload.player);
+            if (!player) return socket.emit('join-error', 'Choose a player name.');
+            game.players.push(player);
+            socket.join(code);
         }
+        broadcast(code, game);
+        socket.emit('join-success', { gameCode: code });
     });
-
-    // Allow clients to request the current player list for a game
-    /**
-     * Socket.io event: Returns the current roster for a given lobby.
-     * @event get-players
-     * @param gameCode - The lobby code whose player list is requested.
-     * @emits update-players - Responds with the latest player data for the caller.
-     * @emits join-error - Sent when the lobby cannot be found.
-     */
-    socket.on('get-players', (gameCode: string) => {
-        const game = games[gameCode];
-        if (game) {
-            // Send the current players list to the requesting socket only
-            socket.emit('update-players', game.players);
-        } else {
-            socket.emit('join-error', 'Game not found. Please check the code.');
-        }
-    });
-
-    // Provide a lightweight snapshot to clients that ask for it (used for recovery)
-    /**
-     * Socket.io event: Provides a snapshot of game state for reconnecting clients.
-     * @event get-state
-     * @param gameCode - The lobby code whose state should be synchronized.
-     * @emits state - Returns players, question data, and remaining time.
-     * @emits join-error - Indicates that the lobby no longer exists.
-     */
-    socket.on('get-state', (gameCode: string) => {
-        const game = games[gameCode];
+    socket.on('get-players', (code) => {
+        const game = typeof code === 'string' ? games.get(code) : undefined;
         if (!game) return socket.emit('join-error', 'Game not found.');
-
-        const players = game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer, avatar: p.avatar }));
-
-        const player = game.players.find((p) => p.id === socket.id);
-        const myAnswer = player?.lastAnswer;
-
-        // Don't send question state during evaluation/transition period
-        if (game.evaluating) {
-            socket.emit('state', { players });
-            return;
-        }
-
-        if (game.currentQuestionIndex !== undefined && game.questions && game.questions[game.currentQuestionIndex]) {
-            const idx = game.currentQuestionIndex;
-            const raw = game.questions[idx];
-            const all_answers = game.currentAllAnswers ?? [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5);
-            const timeLimitSetting = game.settings?.timeLimit;
-            const timeLimit = typeof timeLimitSetting === 'number' && timeLimitSetting > 0 ? timeLimitSetting : null;
-            const endTime = game.questionEndAt ?? (timeLimit ? Date.now() + timeLimit * 1000 : null);
-            const question = {
-                index: idx,
-                question: raw.question,
-                category: raw.category,
-                difficulty: raw.difficulty,
-                correct_answer: raw.correct_answer,
-                incorrect_answers: raw.incorrect_answers,
-                all_answers,
-                timeLimit,
-                endTime,
-            };
-
-            let remaining = 0;
-            if (game.questionEndAt) {
-                remaining = Math.max(0, Math.ceil((game.questionEndAt - Date.now()) / 1000));
-            }
-            socket.emit('state', { players, question, timeLeft: game.questionEndAt ? remaining : null, myAnswer });
-        } else {
-            socket.emit('state', { players });
-        }
+        if (!restorePlayer(socket, game, code)) return;
+        broadcast(code, game);
     });
-    // You would add more events here, like "start-game", "submit-answer", etc.
-    /**
-     * Socket.io event: Begins a multiplayer trivia match using the provided settings.
-     * @event start-game
-     * @param payload.gameCode - Lobby code for the match to start.
-     * @param payload.settings - Host-selected category, difficulty, question count, and timer.
-     * @emits start-error - Signals problems such as missing lobby or unauthorized host.
-     * @emits game-started - Broadcasts applied settings to all players.
-     * @emits question - Sends the first formatted question to the lobby.
-     */
-    socket.on('start-game', async ({ gameCode, settings }: { gameCode: string; settings?: { category?: string; difficulty?: string; amount?: number; timeLimit?: number | null } }) => {
-        const game = games[gameCode];
-        if (!game) return socket.emit('start-error', 'Game not found');
-        if (game.host !== socket.id) return socket.emit('start-error', 'Only the host can start the game');
-
-        // Persist settings
-        game.settings = {
-            category: settings?.category,
-            difficulty: settings?.difficulty,
-            amount: settings?.amount ?? 10,
-            timeLimit: settings?.timeLimit === undefined ? 15 : settings.timeLimit,
-        };
-
-        // Fetch questions from The Trivia API
-        try {
-            let apiUrl = `https://the-trivia-api.com/v2/questions?limit=${game.settings.amount}`;
-
-            if (game.settings.category) {
-                apiUrl += `&categories=${game.settings.category}`;
-            }
-
-            if (game.settings.difficulty) {
-                apiUrl += `&difficulties=${game.settings.difficulty}`;
-            }
-
-            const res = await fetch(apiUrl);
-            const data = (await res.json()) as TriviaApiQuestionResponse[];
-            // Format questions to match internal structure
-            game.questions = data.map((q) => ({
-                category: q.category,
-                question: q.question.text,
-                difficulty: q.difficulty,
-                correct_answer: q.correctAnswer,
-                incorrect_answers: q.incorrectAnswers,
-            }));
-            game.currentQuestionIndex = 0;
-            game.active = true;
-
-            // Notify clients that game started and send first question
-            io.to(gameCode).emit('game-started', { settings: game.settings });
-            sendQuestion(gameCode);
-        } catch (err) {
-            console.error('Failed to fetch questions', err);
-            socket.emit('start-error', 'Failed to fetch questions');
-        }
-    });
-
-    // Players submit answers
-    /**
-     * Socket.io event: Registers a player's answer for the active question.
-     * @event submit-answer
-     * @param payload.gameCode - Lobby code for the current match.
-     * @param payload.answer - Answer text selected by the player.
-     * @param payload.questionIndex - Index of the question the answer belongs to.
-     * @emits update-players - Reflects which participants have responded.
-     * @emits all-answered - Signals when every player has submitted an answer.
-     * @emits question-ended - Reveals correct answers after evaluation.
-     */
-    socket.on('submit-answer', ({ gameCode, answer, questionIndex }: { gameCode: string; answer: string; questionIndex: number }) => {
-        const game = games[gameCode];
-        if (!game || !game.active) return;
-
-        // Ignore if this answer is for a stale (previous) question
-        if (questionIndex !== game.currentQuestionIndex) return;
-
-        // Record the player's answer on their player object for this question
-        const player = game.players.find((p) => p.id === socket.id);
+    socket.on('get-state', (code) => {
+        const game = typeof code === 'string' ? games.get(code) : undefined;
+        if (!game) return socket.emit('join-error', 'Game not found.');
+        const player = restorePlayer(socket, game, code);
         if (!player) return;
-
-        // Store temporary lastAnswer field (prevent re-submits)
-        if (player.lastAnswer) return;
-        player.lastAnswer = answer;
-        // Optionally record timestamp for tiebreakers
-        player.lastAnswerTs = Date.now();
-        // Broadcast updated players so UI updates (e.g., show who answered)
-        io.to(gameCode).emit(
-            'update-players',
-            game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer, avatar: p.avatar })),
-        );
-
-        // If everyone has answered, evaluate immediately
-        const allAnswered = game.players.every((p) => !!p.lastAnswer);
-        if (allAnswered && !game.evaluating) {
-            game.evaluating = true;
-            // Notify clients that everyone has answered (don't reveal correct answer yet)
-            io.to(gameCode).emit('all-answered', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, answered: !!p.lastAnswer, avatar: p.avatar })) });
-
-            // clear the current timeout that would have evaluated later
-            if (game.timer) {
-                clearTimeout(game.timer as NodeJS.Timeout);
-                game.timer = null;
-            }
-
-            // Wait a short moment so clients can show "everyone answered" UI, then reveal
-            setTimeout(() => {
-                // Evaluate answers and award 1 point for correct
-                const idx = game.currentQuestionIndex ?? 0;
-                const raw = game.questions?.[idx];
-                const correct = raw?.correct_answer;
-                for (const p of game.players) {
-                    const ans = p.lastAnswer;
-                    if (ans && ans === correct) {
-                        p.score += 1;
-                    }
-                    // Clear lastAnswer immediately after scoring
-                    delete p.lastAnswer;
-                    delete p.lastAnswerTs;
-                }
-
-                const transitionEnd = Date.now() + 3000;
-                /**
-                 * Socket.io event: Reveals the correct answer and updated scores after evaluation.
-                 * @event question-ended
-                 * @param payload.correctAnswer - The authoritative answer for the completed question.
-                 * @param payload.players - Player list augmented with latest scores.
-                 * @param payload.transitionEnd - Timestamp signaling when the reveal phase finishes.
-                 */
-                io.to(gameCode).emit('question-ended', {
-                    correctAnswer: correct,
-                    players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
-                    transitionEnd,
-                });
-                delete game.currentAllAnswers;
-                // move to next question after 3s
-                game.currentQuestionIndex = (game.currentQuestionIndex ?? 0) + 1;
-                game.timer = setTimeout(() => {
-                    game.evaluating = false;
-                    sendQuestion(gameCode);
-                }, 3000);
-            }, 200);
+        socket.emit('state', { players: publicPlayers(game), question: game.phase === 'question' ? publicQuestion(game) : undefined,
+            timeLeft: game.endAt ? Math.max(0, Math.ceil((game.endAt - Date.now()) / 1000)) : null, myAnswer: player.lastAnswer });
+        if (game.phase === 'reveal') socket.emit('question-ended', { correctAnswer: game.correctAnswer, players: publicPlayers(game), transitionEnd: game.transitionEnd });
+        if (game.phase === 'finished') socket.emit('game-over', { players: publicPlayers(game) });
+    });
+    socket.on('start-game', async (payload) => {
+        const code = payload?.gameCode;
+        const game = typeof code === 'string' ? games.get(code) : undefined;
+        if (!game || game.host !== socket.id) return socket.emit('start-error', 'Only the host can start an existing game.');
+        if (!['lobby', 'finished'].includes(game.phase)) return socket.emit('start-error', 'A game is already running.');
+        const settings = payload.settings || {};
+        const timeLimit = settings.timeLimit === undefined ? 15 : settings.timeLimit;
+        if (timeLimit !== null && (!Number.isInteger(timeLimit) || timeLimit < 5 || timeLimit > 120)) return socket.emit('start-error', 'Time limit must be 5–120 seconds.');
+        game.phase = 'loading';
+        try {
+            const questions = await fetchQuestions(settings.amount ?? 10, settings.category, settings.difficulty);
+            if (games.get(code) !== game) return;
+            game.id = randomUUID();
+            game.settings = { ...settings, amount: settings.amount ?? 10, timeLimit };
+            game.questions = questions;
+            game.index = 0;
+            for (const player of game.players) player.score = 0;
+            io.to(code).emit('game-started', { settings: game.settings });
+            sendQuestion(code, game);
+        } catch (error) {
+            game.phase = 'lobby';
+            socket.emit('start-error', error instanceof Error ? error.message : 'Failed to fetch questions.');
         }
     });
-
-    // Allow a player to leave the game voluntarily
-    /**
-     * Socket.io event: Removes a player from the lobby and reassigns host when needed.
-     * @event leave-game
-     * @param payload.gameCode - Lobby code the player wishes to exit.
-     * @emits update-players - Broadcasts the new roster after removal.
-     */
-    socket.on('leave-game', ({ gameCode }: { gameCode: string }) => {
-        const game = games[gameCode];
-        if (!game) return;
-        const idx = game.players.findIndex((p) => p.id === socket.id);
-        if (idx !== -1) {
-            game.players.splice(idx, 1);
-        }
-
-        socket.leave(gameCode);
-
-        if (game.players.length === 0) {
-            delete games[gameCode];
-        } else {
-            if (game.host === socket.id) {
-                game.host = game.players[0].id;
-            }
-            io.to(gameCode).emit('update-players', game.players);
+    socket.on('submit-answer', (payload) => {
+        const code = payload?.gameCode;
+        const game = typeof code === 'string' ? games.get(code) : undefined;
+        if (!game || game.phase !== 'question' || payload.questionIndex !== game.index) return;
+        if (game.endAt && Date.now() >= game.endAt) return evaluate(code, game);
+        const player = game.players.find((p) => p.id === socket.id && p.key === socket.data.key);
+        if (!player || player.lastAnswer || !game.answers.includes(payload.answer)) return;
+        player.lastAnswer = payload.answer;
+        broadcast(code, game);
+        if (game.players.every((p) => p.disconnected || p.lastAnswer)) {
+            io.to(code).emit('all-answered', { players: publicPlayers(game) });
+            evaluate(code, game);
         }
     });
-
-    /**
-     * Emits the next trivia question and starts any associated countdown timers.
-     * @param gameCode - Lobby code whose participants should receive the question.
-     * @emits question - Sends formatted question data to every player in the lobby.
-     */
-    const sendQuestion = (gameCode: string) => {
-        const game = games[gameCode];
-        if (!game || !game.questions) return;
-        const idx = game.currentQuestionIndex ?? 0;
-        const raw = game.questions[idx];
-        if (!raw) {
-            // No more questions -> end game
-            endGame(gameCode);
-            return;
-        }
-
-        // Prepare question payload
-        const all_answers = [...raw.incorrect_answers, raw.correct_answer].sort(() => Math.random() - 0.5);
-        game.currentAllAnswers = all_answers; // Store for resync consistency
-        const timeLimitSetting = game.settings?.timeLimit;
-        const timeLimit = typeof timeLimitSetting === 'number' && timeLimitSetting > 0 ? timeLimitSetting : null;
-        const endTime = timeLimit ? Date.now() + timeLimit * 1000 : null;
-        const question = {
-            index: idx,
-            question: raw.question,
-            category: raw.category,
-            difficulty: raw.difficulty,
-            correct_answer: raw.correct_answer,
-            incorrect_answers: raw.incorrect_answers,
-            all_answers,
-            timeLimit,
-            endTime,
-        };
-
-        // Clear previous last answers before sending new question
-        for (const p of game.players) {
-            delete p.lastAnswer;
-            delete p.lastAnswerTs;
-        }
-        io.to(gameCode).emit('question', question);
-
-        // record when this question will end (ms since epoch)
-        game.questionEndAt = question.endTime;
-
-        // Clear any existing timer
-        if (game.timer) {
-            clearTimeout(game.timer as NodeJS.Timeout);
-            game.timer = null;
-        }
-
-        // Set timer only if timeLimit exists
-        if (timeLimit) {
-            game.timer = setTimeout(() => {
-                game.evaluating = true; // Set here to prevent races with late answers
-
-                // Evaluate answers and award 1 point for correct
-                const correct = raw.correct_answer;
-                for (const p of game.players) {
-                    const ans = p.lastAnswer;
-                    if (ans && ans === correct) {
-                        p.score += 1;
-                    }
-                    // Clear lastAnswer immediately after scoring
-                    delete p.lastAnswer;
-                    delete p.lastAnswerTs;
-                }
-
-                // clear questionEndAt since evaluation finished
-                game.questionEndAt = null;
-
-                // Broadcast final answers and updated scores
-                const transitionEnd = Date.now() + 3000;
-                io.to(gameCode).emit('question-ended', {
-                    correctAnswer: correct,
-                    players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })),
-                    transitionEnd,
-                });
-                delete game.currentAllAnswers;
-                // Move to next question after short delay (3s)
-                game.currentQuestionIndex = (game.currentQuestionIndex ?? 0) + 1;
-                // If there are more questions, send next after 3s
-                game.timer = setTimeout(() => {
-                    game.evaluating = false;
-                    sendQuestion(gameCode);
-                }, 3000);
-            }, timeLimit * 1000);
-        } else {
-            game.timer = null;
-            game.questionEndAt = null;
-        }
-    };
-
-    /**
-     * Finalizes the match, clears timers, and shares the concluding leaderboard.
-     * @param gameCode - Lobby code whose game lifecycle is ending.
-     * @emits game-over - Broadcasts final player standings to all participants.
-     */
-    const endGame = (gameCode: string) => {
-        const game = games[gameCode];
-        if (!game) return;
-        game.active = false;
-        if (game.timer) {
-            clearTimeout(game.timer as NodeJS.Timeout);
-            game.timer = null;
-        }
-
-        // Emit final results
-        /**
-         * Socket.io event: Announces the final leaderboard and concludes the match.
-         * @event game-over
-         * @param payload.players - Player standings with final scores and avatars.
-         */
-        io.to(gameCode).emit('game-over', { players: game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar })) });
-        delete game.currentAllAnswers;
-    };
-
-    /**
-     * Socket.io event: Cleans up player state when a socket disconnects unexpectedly.
-     * @event disconnect
-     * @param reason - Description supplied by Socket.IO for the disconnect.
-     */
+    socket.on('leave-game', (payload) => {
+        const code = payload?.gameCode;
+        const game = typeof code === 'string' ? games.get(code) : undefined;
+        if (!game || !game.players.some((p) => p.id === socket.id)) return;
+        socket.leave(code);
+        removePlayer(code, game, socket.data.key);
+    });
     socket.on('disconnect', () => {
-        // Remove this socket/player from any games they are in
-        for (const [code, game] of Object.entries(games)) {
-            const idx = game.players.findIndex((p) => p.id === socket.id);
-            if (idx !== -1) {
-                game.players.splice(idx, 1);
-
-                if (game.players.length === 0) {
-                    // No players left: abandon the game
-                    delete games[code];
-                } else {
-                    // If host left, assign new host (first player)
-                    if (game.host === socket.id) {
-                        game.host = game.players[0].id;
-                    }
-                    // Emit updated player list to remaining players
-                    io.to(code).emit('update-players', game.players);
-                }
-            }
+        for (const [code, game] of games) {
+            const player = game.players.find((p) => p.id === socket.id);
+            if (!player) continue;
+            player.disconnected = true;
+            player.removalTimer = setTimeout(() => removePlayer(code, game, player.key), 30_000);
+            broadcast(code, game);
         }
     });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-    console.info(`🚀 Trivia server running on port ${PORT}`);
-});
+server.listen(process.env.PORT || 3001, () => console.info('Trivia server is listening.'));
+export async function stopServer() {
+    for (const [code, game] of games) destroyGame(code, game);
+    io.close();
+    server.close();
+    await Promise.allSettled(pendingStats);
+    await db.end();
+}
+process.once('SIGTERM', () => { void stopServer().then(() => process.exit(0)); });
+process.once('SIGINT', () => { void stopServer().then(() => process.exit(0)); });

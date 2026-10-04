@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Trivia World
 
-## Getting Started
+Next.js frontend and Bun/Express/Socket.IO backend. Neon Postgres stores accounts,
+sessions, profiles, statistics, and resized avatars. Better Auth handles email/password
+authentication; Resend sends verification and password reset links.
 
-First, run the development server:
+## Development
 
-```bash
+Install Node.js and Bun, then run `npm ci`. Copy `.env.example` to `.env.local` and
+fill in the backend credentials. Use a separate development Neon branch or local
+Postgres database. Never put credentials in variables prefixed with `NEXT_PUBLIC_`.
+
+```sh
+bun --env-file=.env.local run start:server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The backend runs on port 3001 and the frontend on port 3000. Starting the backend
+applies migrations first. Migrations are serialized and recorded in the database;
+subsequent starts preserve existing data. To apply them separately:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```sh
+bun --env-file=.env.local run db:migrate
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deployment
 
-## Learn More
+The frontend is hosted on Vercel and the backend on Render. The frontend proxies
+`/api/*` to Render so authentication cookies stay on the frontend's own domain.
+Socket.IO connects directly to Render with the user's authenticated session token.
 
-To learn more about Next.js, take a look at the following resources:
+On **Render**, set the build command to `npm ci` and the start command to
+`bun run start:server`. Set these environment variables:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Neon's pooled Postgres connection string with TLS enabled |
+| `FRONTEND_URL` | `https://triviaworld.live,https://www.triviaworld.live` |
+| `BETTER_AUTH_URL` | `https://www.triviaworld.live` |
+| `BETTER_AUTH_SECRET` | A stable random secret of at least 32 characters |
+| `RESEND_API_KEY` | Resend API key with sending access |
+| `RESEND_FROM_EMAIL` | Sender address on an already verified Resend domain |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Render supplies `PORT`. Bun must be available in the runtime. An optional
+`AUTH_TRUSTED_ORIGINS` accepts additional comma-separated frontend origins.
 
-## Deploy on Vercel
+On **Vercel**, set `BACKEND_URL=https://api.triviaworld.live` (server only) and
+`NEXT_PUBLIC_SOCKET_URL=https://api.triviaworld.live`, then rebuild. Configure
+Render before deploying the frontend. Old Supabase keys are no longer used.
+This migration starts with fresh accounts and statistics; it does not import
+Supabase data or delete the old Supabase project.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Google login is optional. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on
+Render and register `https://www.triviaworld.live/api/auth/callback/google` as the
+OAuth redirect URI. The UI shows Google login only when both variables exist.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Avatars are decoded, cropped to 256×256 WebP, and stored in Postgres with a
+256 KB limit. No separate object storage service is required. Database storage
+counts toward Neon usage. Authenticated statistics are updated on the server,
+with duplicate answer/match receipts preventing repeated counts.
+
+Render restarts preserve database contents but interrupt active multiplayer
+matches, which are held in memory. Render's free service can sleep; Neon storage
+survives that sleep. Neon's compute may also suspend when idle and resume on demand.
+
+## Verification
+
+```sh
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Integration tests exercise verification/sign-in, profiles, avatar decoding,
+password resets, solo ownership and scoring, and multiplayer statistics.
+They require a **disposable local Postgres database**, reject remote database URLs,
+and mock outgoing emails and the trivia provider. Migrate the test database first,
+then run:
+
+```sh
+TEST_DATABASE_URL=postgresql://localhost/trivia_test bun test tests
+```

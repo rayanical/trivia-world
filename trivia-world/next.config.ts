@@ -1,13 +1,9 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
     images: {
-        remotePatterns: [
-            {
-                protocol: 'https',
-                hostname: 'tlohkowenisiilmiekox.supabase.co',
-                pathname: '/storage/v1/object/public/**',
-            },
-        ],
+        // Avatar endpoints are small preprocessed WebP images with their own caching.
+        unoptimized: true,
     },
 };
 

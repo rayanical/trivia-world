@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PasswordValidator from './PasswordValidator';
-import { supabase } from '@/lib/supabaseClient';
+import { authClient } from '@/lib/auth-client';
+import { api } from '@/lib/api';
 import { useAlert } from '@/context/AlertContext';
 
 type AuthModalProps = {
@@ -25,7 +26,7 @@ const validatePassword = (password: string): string | null => {
 };
 
 /**
- * Presents a modal for signing in or creating an account via Supabase authentication.
+ * Presents a modal for signing in or creating an account via Better Auth.
  * @param props - Control flags and callbacks for the modal lifecycle.
  * @returns Authentication modal dialog or null when closed.
  */
@@ -37,6 +38,12 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const { showAlert } = useAlert();
+    const [googleEnabled, setGoogleEnabled] = useState(false);
+    const [isResetting, setIsResetting] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) api<{ googleEnabled: boolean }>('/config').then((config) => setGoogleEnabled(config.googleEnabled)).catch(() => setGoogleEnabled(false));
+    }, [isOpen]);
 
     /**
      * Handles email-based sign in or sign up flows, including profile provisioning.
@@ -46,62 +53,23 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
         setError(null);
 
         try {
-            if (isSignup) {
+            if (isResetting) {
+                const { error } = await authClient.requestPasswordReset({ email, redirectTo: `${window.location.origin}/reset-password` });
+                if (error) throw new Error(error.message || 'Could not request a reset email.');
+                showAlert('If an account exists for this email, a reset link will arrive shortly.', 'success');
+                onClose();
+            } else if (isSignup) {
                 const passwordError = validatePassword(password);
-                if (passwordError) {
-                    setError(passwordError);
-                    setLoading(false);
-                    return;
-                }
-
-                if (username.length > 15) {
-                    setError('Username must be 15 characters or less');
-                    setLoading(false);
-                    return;
-                }
-
-                /**
-                 * Registers a new user with Supabase Auth and attaches the requested username.
-                 */
-                const { data, error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: {
-                        data: { username },
-                    },
-                });
-                if (error) throw error;
-
-                if (data.user) {
-                    /**
-                     * Upserts the user's profile metadata with username and timestamp.
-                     */
-                    const { error: profileError } = await supabase.from('profiles').upsert({
-                        id: data.user.id,
-                        username,
-                        updated_at: new Date().toISOString(),
-                    });
-
-                    if (profileError) throw profileError;
-
-                    /**
-                     * Initializes statistics tracking entry for the new account.
-                     */
-                    const { error: statsError } = await supabase.from('user_stats').upsert({
-                        user_id: data.user.id,
-                    });
-
-                    if (statsError) throw statsError;
-
-                    showAlert('Signup successful!', 'success');
-                    onClose();
-                }
+                if (passwordError) throw new Error(passwordError);
+                const name = username.trim();
+                if (name.length < 3 || name.length > 15) throw new Error('Username must be 3–15 characters.');
+                const { error } = await authClient.signUp.email({ email, password, name, callbackURL: window.location.origin });
+                if (error) throw new Error(error.message || 'Could not create your account.');
+                showAlert('Check your email to verify your account before signing in.', 'success');
+                onClose();
             } else {
-                /**
-                 * Authenticates an existing user via Supabase email/password credentials.
-                 */
-                const { error } = await supabase.auth.signInWithPassword({ email, password });
-                if (error) throw error;
+                const { error } = await authClient.signIn.email({ email, password });
+                if (error) throw new Error(error.message || 'Could not sign in.');
                 showAlert('Signed in successfully!', 'success');
                 onClose();
             }
@@ -113,23 +81,15 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     };
 
     /**
-     * Initiates an OAuth sign-in flow with the supplied provider using Supabase Auth.
+     * Initiates an OAuth sign-in flow with the supplied provider using Better Auth.
      * @param provider - External identity provider identifier (currently Google).
      */
     const handleOAuthSignIn = async (provider: 'google') => {
         setLoading(true);
         setError(null);
         try {
-            /**
-             * Delegates authentication to the provider using Supabase-managed OAuth.
-             */
-            const { error } = await supabase.auth.signInWithOAuth({
-                provider,
-                options: {
-                    redirectTo: window.location.href,
-                },
-            });
-            if (error) throw error;
+            const { error } = await authClient.signIn.social({ provider, callbackURL: window.location.href });
+            if (error) throw new Error(error.message || 'Failed to sign in with Google');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to sign in with Google');
         } finally {
@@ -142,7 +102,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
     return (
         <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-50 p-4">
             <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-8 rounded-xl shadow-2xl border border-green-900/30 w-full max-w-md">
-                <h2 className="text-3xl font-bold text-green-400 mb-6 text-center">{isSignup ? 'Sign Up' : 'Sign In'}</h2>
+                <h2 className="text-3xl font-bold text-green-400 mb-6 text-center">{isResetting ? 'Reset Password' : isSignup ? 'Sign Up' : 'Sign In'}</h2>
                 {error && <div className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm">{error}</div>}
                 <input
                     type="email"
@@ -151,16 +111,16 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
                 />
-                <input
+                {!isResetting && <input
                     type="password"
                     placeholder={isSignup ? 'Password (min 8 chars, 1 upper, 1 number, 1 special)' : 'Password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full mb-4 p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-                />
-                {isSignup && <PasswordValidator password={password} />}
+                />}
+                {!isResetting && isSignup && <PasswordValidator password={password} />}
 
-                {isSignup && (
+                {!isResetting && isSignup && (
                     <input
                         type="text"
                         placeholder="Username (3-15 characters)"
@@ -173,19 +133,23 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                 <div className="flex gap-4">
                     <button
                         onClick={handleAuth}
-                        disabled={loading || (isSignup && username.length < 3)}
+                        disabled={loading || !email || (!isResetting && (!password || (isSignup && username.trim().length < 3)))}
                         className="flex-1 p-3 rounded-lg bg-green-700 hover:bg-green-800 text-white font-bold disabled:bg-gray-600 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-lg"
                     >
-                        {loading ? 'Loading...' : isSignup ? 'Sign Up' : 'Sign In'}
+                        {loading ? 'Loading...' : isResetting ? 'Send Reset Email' : isSignup ? 'Sign Up' : 'Sign In'}
                     </button>
                     <button onClick={onClose} className="flex-1 p-3 rounded-lg bg-red-700 hover:bg-red-800 text-white font-bold cursor-pointer transition-colors shadow-lg">
                         Cancel
                     </button>
                 </div>
-                <button onClick={() => setIsSignup(!isSignup)} className="mt-4 text-green-400 hover:text-green-300 underline w-full text-center cursor-pointer transition-colors">
+                <button onClick={() => { setIsResetting(false); setIsSignup(!isSignup); setError(null); }} className="mt-4 text-green-400 hover:text-green-300 underline w-full text-center cursor-pointer transition-colors">
                     {isSignup ? 'Switch to Sign In' : 'Switch to Sign Up'}
                 </button>
 
+                <button onClick={() => { setIsResetting(!isResetting); setError(null); }} className="mt-3 text-green-400 underline w-full text-center cursor-pointer">
+                    {isResetting ? 'Back to sign in' : 'Forgot password?'}
+                </button>
+                {googleEnabled && !isResetting && <>
                 <div className="relative my-6">
                     <div className="absolute inset-0 flex items-center" aria-hidden="true">
                         <div className="w-full border-t border-gray-500" />
@@ -209,6 +173,7 @@ export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
                         Sign in with Google
                     </button>
                 </div>
+                </>}
             </div>
         </div>
     );

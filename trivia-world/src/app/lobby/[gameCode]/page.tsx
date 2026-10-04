@@ -4,10 +4,9 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import CustomSelect from '@/app/components/CustomSelect';
+import { useAlert } from '@/context/AlertContext';
 import { socket } from '@/lib/socket';
-import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
-import type { User } from '@supabase/supabase-js';
 
 const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
 
@@ -66,6 +65,7 @@ export default function LobbyPage() {
 
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const { user, profile } = useAuth();
+    const { showAlert } = useAlert();
     const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
     const [category, setCategory] = useState<string>('');
     const [difficulty, setDifficulty] = useState<string>('');
@@ -80,9 +80,6 @@ export default function LobbyPage() {
     const revealTimerRef = useRef<number | null>(null);
     const recoveryTimerRef = useRef<number | null>(null);
 
-    const selectedAnswerRef = useRef<string | null>(null);
-    const currentQuestionRef = useRef<Question | null>(null);
-    const userRef = useRef<User | null>(null);
 
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [revealedAnswer, setRevealedAnswer] = useState<string | null>(null);
@@ -106,18 +103,6 @@ export default function LobbyPage() {
     };
 
     useEffect(() => {
-        userRef.current = user;
-    }, [user]);
-
-    useEffect(() => {
-        selectedAnswerRef.current = selectedAnswer;
-    }, [selectedAnswer]);
-
-    useEffect(() => {
-        currentQuestionRef.current = currentQuestion;
-    }, [currentQuestion]);
-
-    useEffect(() => {
         const currentPlayerName = typeof window !== 'undefined' ? sessionStorage.getItem('playerName') : null;
         if (currentPlayerName && currentPlayerName.length > 15) {
             const truncatedName = currentPlayerName.substring(0, 15);
@@ -129,7 +114,7 @@ export default function LobbyPage() {
     useEffect(() => {
         // This effect runs when the component mounts or when user/profile changes (e.g., after login).
         if (gameCode && user && profile && !hasAttemptedJoin) {
-            const playerIsAlreadyInLobby = players.some((p) => p.name === profile.username);
+            const playerIsAlreadyInLobby = players.some((p) => p.id === socket.id);
 
             if (!playerIsAlreadyInLobby && players.length < maxPlayers) {
                 const player = {
@@ -256,21 +241,7 @@ export default function LobbyPage() {
                 recoveryTimerRef.current = null;
             }, 5000) as unknown as number;
 
-            if (userRef.current && selectedAnswerRef.current && currentQuestionRef.current?.difficulty && payload.correctAnswer) {
-                const u = userRef.current as { id: string };
-                const isCorrect = selectedAnswerRef.current === payload.correctAnswer;
-                const difficulty = currentQuestionRef.current.difficulty.toLowerCase();
-                try {
-                    /**
-                     * Persists per-question multiplayer performance for the authenticated player.
-                     * Tracks difficulty-specific correctness to power post-game analytics.
-                     */
-                    const { error } = await supabase.rpc('update_multiplayer_question_stats', { p_user_id: u.id, p_diff: difficulty, p_correct: isCorrect });
-                    if (error) console.error('Error updating question stats:', error);
-                } catch (err) {
-                    console.error('Unexpected error updating question stats:', err);
-                }
-            }
+
         };
         const onAllAnswered = (payload: { players?: PlayerView[] }) => {
             setPlayers(payload.players || []);
@@ -306,30 +277,15 @@ export default function LobbyPage() {
                 revealTimerRef.current = null;
             }
 
-            if (userRef.current && payload.players && payload.players.length > 0) {
-                const u = userRef.current as { id: string };
-                const currentPlayerName = sessionStorage.getItem('playerName') || '';
-                const myPlayer = payload.players.find((p) => p.name === currentPlayerName);
-                if (myPlayer) {
-                    const myScore = myPlayer.score || 0;
-                    const maxScore = Math.max(...payload.players.map((p) => p.score || 0));
-                    const won = myScore >= maxScore;
-                    try {
-                        /**
-                         * Records aggregated multiplayer game results for the authenticated player.
-                         * Updates win/loss totals based on the match outcome.
-                         */
-                        const { error } = await supabase.rpc('update_multiplayer_game_stats', { p_user_id: u.id, p_won: won });
-                        if (error) console.error('Error updating game stats:', error);
-                    } catch (err) {
-                        console.error('Unexpected error updating game stats:', err);
-                    }
-                } else {
-                    console.warn('No matching player found for stats update:', currentPlayerName);
-                }
-            }
+
         };
 
+        const onError = (message: string) => showAlert(message, 'error');
+        const onConnectionError = (error: Error) => showAlert(error.message, 'error');
+        socket.on('start-error', onError);
+        socket.on('join-error', onError);
+        socket.on('stats-error', onError);
+        socket.on('connect_error', onConnectionError);
         socket.on('update-players', onUpdate);
         socket.on('state', onState);
         socket.on('question', onQuestion);
@@ -343,16 +299,20 @@ export default function LobbyPage() {
                 socket.emit('get-players', gameCode);
             }
         };
-        socket.on('reconnect', onReconnect);
+        socket.on('connect', onReconnect);
 
         return () => {
+            socket.off('start-error', onError);
+            socket.off('join-error', onError);
+            socket.off('stats-error', onError);
+            socket.off('connect_error', onConnectionError);
             socket.off('update-players', onUpdate);
             socket.off('state', onState);
             socket.off('question', onQuestion);
             socket.off('all-answered', onAllAnswered);
             socket.off('question-ended', onQuestionEnded);
             socket.off('game-over', onGameOver);
-            socket.off('reconnect', onReconnect);
+            socket.off('connect', onReconnect);
 
             if (recoveryTimerRef.current) {
                 window.clearTimeout(recoveryTimerRef.current);
@@ -363,7 +323,7 @@ export default function LobbyPage() {
                 revealTimerRef.current = null;
             }
         };
-    }, [gameCode]);
+    }, [gameCode, showAlert]);
 
     useEffect(() => {
         const handleVisibilityChange = () => {
@@ -411,8 +371,7 @@ export default function LobbyPage() {
         };
     }, [currentQuestion?.endTime, timeLeft, gameCode, isRevealPhase]);
 
-    const currentPlayerName = typeof window !== 'undefined' ? sessionStorage.getItem('playerName') : null;
-    const isHost = players.length > 0 && players[0].name === currentPlayerName;
+    const isHost = players.length > 0 && players[0].id === socket.id;
 
     /**
      * Emits a request to start the game when the host finalizes lobby settings.
@@ -523,7 +482,7 @@ export default function LobbyPage() {
     }
 
     if (showGameOver) {
-        const currentPlayer = players.find((p) => p.name === currentPlayerName);
+        const currentPlayer = players.find((p) => p.id === socket.id);
         return (
             <div className="flex h-screen flex-col items-center justify-center bg-[#1A201A] text-white p-4">
                 <h1 className="text-4xl font-bold mb-4">Game Over!</h1>
@@ -540,7 +499,7 @@ export default function LobbyPage() {
                         <p className="text-3xl font-bold text-green-400">{winner.name}</p>
                     </div>
                 )}
-                {currentPlayer && winner && currentPlayer.name !== winner.name && (
+                {currentPlayer && winner && currentPlayer.id !== winner.id && (
                     <div className="mt-8 text-center">
                         <h3 className="text-xl">Your Stats:</h3>
                         <p>Score: {currentPlayer.score}</p>
@@ -709,7 +668,7 @@ export default function LobbyPage() {
                                                     {(p.name?.charAt(0) ?? '?').toUpperCase()}
                                                 </div>
                                             )}
-                                            <span className={p.name === currentPlayerName ? 'text-[#22c55e] font-bold' : ''}>{p.name}</span>
+                                            <span className={p.id === socket.id ? 'text-[#22c55e] font-bold' : ''}>{p.name}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -820,7 +779,7 @@ export default function LobbyPage() {
                                                 </div>
                                             )}
                                             <div className="flex-1">
-                                                <span className={`font-medium text-sm truncate block ${p.name === currentPlayerName ? 'text-[#22c55e] font-bold' : ''}`}>{p.name}</span>
+                                                <span className={`font-medium text-sm truncate block ${p.id === socket.id ? 'text-[#22c55e] font-bold' : ''}`}>{p.name}</span>
                                                 <span className="text-green-400 font-bold text-xs">{p.score || 0} pts</span>
                                             </div>
                                         </div>

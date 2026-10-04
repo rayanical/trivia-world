@@ -4,27 +4,23 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Spinner from '../components/Spinner';
 import CustomSelect from '../components/CustomSelect';
-import { supabase } from '@/lib/supabaseClient';
+import { api, jsonBody } from '@/lib/api';
+import { useAlert } from '@/context/AlertContext';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/context/AuthContext';
 import Image from 'next/image';
 const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
 type Category = { id: number; name: string };
 type Question = {
+    id: string;
+    token?: string;
     question: string;
     difficulty: 'easy' | 'medium' | 'hard';
     category: string;
-    correct_answer: string;
-    incorrect_answers: string[];
+    correct_answer?: string;
     all_answers: string[];
 };
-type TriviaApiQuestion = {
-    question: { text: string };
-    difficulty: 'easy' | 'medium' | 'hard';
-    correctAnswer: string;
-    incorrectAnswers: string[];
-    category: string;
-};
+
 
 /**
  * Renders the solo trivia game experience, including setup, gameplay, and summary states.
@@ -32,7 +28,8 @@ type TriviaApiQuestion = {
  */
 export default function SoloGamePage() {
     const router = useRouter();
-    const { user, profile } = useAuth();
+    const { profile } = useAuth();
+    const { showAlert } = useAlert();
 
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
     const [playerName, setPlayerName] = useState<string>('Guest');
@@ -68,6 +65,8 @@ export default function SoloGamePage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isGameOver, setIsGameOver] = useState(false);
     const gameContainerRef = useRef<HTMLDivElement>(null);
+    const fetchingRef = useRef(false);
+    const answeringRef = useRef(false);
 
     useEffect(() => {
         const triviaApiCategories = [
@@ -91,34 +90,19 @@ export default function SoloGamePage() {
      * Populates local state with formatted question data for gameplay.
      */
     const fetchQuestions = useCallback(async () => {
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
         setIsLoading(true);
-        let apiUrl = `https://the-trivia-api.com/v2/questions?limit=10`;
-
-        if (selectedCategory) {
-            apiUrl += `&categories=${selectedCategory}`;
+        try {
+            const data = await api<Question[]>('/solo/questions', jsonBody({ category: selectedCategory || undefined, difficulty: selectedDifficulty || undefined }));
+            setQuestions((prev) => [...prev, ...data]);
+        } catch (error) {
+            showAlert(error instanceof Error ? error.message : 'Could not load questions.', 'error');
+        } finally {
+            fetchingRef.current = false;
+            setIsLoading(false);
         }
-
-        if (selectedDifficulty) {
-            apiUrl += `&difficulties=${selectedDifficulty}`;
-        }
-        const data = (await fetch(apiUrl).then((res) => res.json())) as TriviaApiQuestion[];
-        const formattedQuestions = data.map((q) => {
-            const allAnswers = [...q.incorrectAnswers, q.correctAnswer];
-            allAnswers.sort(() => Math.random() - 0.5);
-
-            return {
-                question: q.question.text,
-                difficulty: q.difficulty,
-                category: q.category,
-                correct_answer: q.correctAnswer,
-                incorrect_answers: q.incorrectAnswers,
-                all_answers: allAnswers,
-            };
-        });
-
-        setQuestions((prev) => [...prev, ...formattedQuestions]);
-        setIsLoading(false);
-    }, [selectedCategory, selectedDifficulty]);
+    }, [selectedCategory, selectedDifficulty, showAlert]);
 
     /**
      * Initializes a new solo game session by resetting score and question progress.
@@ -150,21 +134,18 @@ export default function SoloGamePage() {
      * @param answer - The answer option chosen by the player for the current question.
      */
     const handleAnswerSelect = async (answer: string) => {
-        if (isAnswered) return;
-        setSelectedAnswer(answer);
-        setIsAnswered(true);
-        const isCorrect = answer === questions[currentQuestionIndex].correct_answer;
-        if (isCorrect) {
-            setScore((prevScore) => prevScore + 1);
-        }
-        if (user?.id) {
-            const difficulty = questions[currentQuestionIndex].difficulty;
-            /**
-             * Records the outcome of the current solo question for analytics.
-             * Updates difficulty buckets and correctness counters for the logged-in user.
-             */
-            await supabase.rpc('update_solo_stats', { p_user_id: String(user.id), p_diff: difficulty, p_correct: isCorrect });
-        }
+        if (isAnswered || answeringRef.current) return;
+        answeringRef.current = true;
+        const question = questions[currentQuestionIndex];
+        try {
+            const result = await api<{ correct: boolean; correctAnswer: string }>('/solo/answer', jsonBody({ id: question.id, token: question.token, answer }));
+            setSelectedAnswer(answer);
+            setIsAnswered(true);
+            setQuestions((prev) => prev.map((q) => q.id === question.id ? { ...q, correct_answer: result.correctAnswer } : q));
+            if (result.correct) setScore((prev) => prev + 1);
+        } catch (error) {
+            showAlert(error instanceof Error ? error.message : 'Could not submit your answer. Please retry.', 'error');
+        } finally { answeringRef.current = false; }
     };
     /**
      * Terminates the current game session and displays the summary screen.
@@ -370,6 +351,7 @@ export default function SoloGamePage() {
                             </button>
                         </div>
 
+                        {!currentQuestion && !isLoading && <button onClick={fetchQuestions} className="p-3 rounded-md bg-green-800 cursor-pointer">Retry loading questions</button>}
                         {currentQuestion && (
                             <div className="flex flex-col gap-6 rounded-xl bg-[#253325] p-4 sm:p-6 shadow-lg">
                                 <div className="flex justify-between text-gray-400">

@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { supabase } from '@/lib/supabaseClient';
-import imageCompression from 'browser-image-compression';
+import { authClient } from '@/lib/auth-client';
+import { api, jsonBody } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
 
@@ -68,17 +68,7 @@ export default function ProfilePage() {
                 setNewUsername(authProfile?.username || '');
                 setAvatarPreview(authProfile?.avatar_url || null);
 
-                /**
-                 * Retrieves detailed gameplay statistics for the logged-in user from Supabase.
-                 * Returns solo and multiplayer aggregates for display across the dashboard tabs.
-                 */
-                const { data: statsData, error: statsError } = await supabase.from('user_stats').select('*').eq('user_id', user.id).single();
-
-                if (statsError && (statsError as { code?: string }).code !== 'PGRST116') {
-                    throw statsError;
-                }
-
-                setStats((statsData as UserStats) || null);
+                setStats(await api<UserStats>('/stats'));
             } catch (err) {
                 const message = err instanceof Error ? err.message : 'Failed to load user data.';
                 setError(message);
@@ -126,11 +116,7 @@ export default function ProfilePage() {
         setSaving(true);
         setError(null);
         try {
-            /**
-             * Updates the Supabase `profiles` table with the new display name for the user.
-             */
-            const { error: updateError } = await supabase.from('profiles').update({ username: newUsername.trim() }).eq('id', user.id);
-            if (updateError) throw updateError;
+            await api('/profile', jsonBody({ username: newUsername.trim() }));
             await refreshProfile();
             setIsEditingUsername(false);
             showAlert('Username updated successfully!', 'success');
@@ -143,7 +129,7 @@ export default function ProfilePage() {
     };
 
     /**
-     * Uploads a new avatar to Supabase Storage and synchronizes the public profile reference.
+     * Uploads a new avatar to the database and synchronizes the public profile reference.
      * @param file - The selected image file chosen by the user.
      */
     const handleAvatarUpload = async (file: File) => {
@@ -151,44 +137,11 @@ export default function ProfilePage() {
         setUploadingAvatar(true);
         setError(null);
         try {
-            if (authProfile?.avatar_url) {
-                const oldAvatarPath = authProfile.avatar_url.split('/avatars/').pop();
-                if (oldAvatarPath) {
-                    /**
-                     * Removes the previous avatar asset from Supabase Storage to avoid orphaned files.
-                     */
-                    await supabase.storage.from('avatars').remove([oldAvatarPath]);
-                }
-            }
-
-            let fileToUpload = file;
-
-            if (file.type !== 'image/gif') {
-                const options = { maxSizeMB: 2, maxWidthOrHeight: 1024, useWebWorker: true };
-                const compressedFile = await imageCompression(file, options);
-                fileToUpload = compressedFile;
-            }
-
-            const cleanFileName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '-');
-            const path = `${user.id}/${Date.now()}_${cleanFileName}`;
-
-            /**
-             * Stores the optimized avatar image in Supabase Storage under the user's namespace.
-             */
-            const { error: uploadError } = await supabase.storage.from('avatars').upload(path, fileToUpload);
-
-            if (uploadError) throw uploadError;
-            /**
-             * Resolves a public URL for the newly uploaded avatar file to use in the profile record.
-             */
-            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
-            const publicUrl = (urlData as { publicUrl?: string } | null)?.publicUrl || '';
-            /**
-             * Saves the avatar URL to the user's profile so it propagates across the application.
-             */
-            const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
-            if (updateError) throw updateError;
-            setAvatarPreview(publicUrl);
+            if (file.size > 2 * 1024 * 1024) throw new Error('Choose an image smaller than 2 MB.');
+            const result = await api<{ avatar_url: string }>('/avatar', {
+                method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
+            });
+            setAvatarPreview(result.avatar_url);
             await refreshProfile();
             showAlert('Avatar updated successfully!', 'success');
         } catch (err) {
@@ -200,7 +153,7 @@ export default function ProfilePage() {
     };
 
     /**
-     * Requests a Supabase password reset email for the current account.
+     * Requests a Better Auth password reset email for the current account.
      */
     const handlePasswordReset = async () => {
         try {
@@ -209,17 +162,9 @@ export default function ProfilePage() {
                 showAlert('No email available for the current user.');
                 return;
             }
-            /**
-             * Initiates Supabase Auth password recovery.
-             * The `redirectTo` option tells Supabase the exact URL
-             * for the button in the password reset email.
-             */
-            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/reset-password`,
-            });
-
-            if (resetError) throw resetError;
-            showAlert('Password reset email sent!', 'success');
+            const { error: resetError } = await authClient.requestPasswordReset({ email, redirectTo: `${window.location.origin}/reset-password` });
+            if (resetError) throw new Error(resetError.message || 'Could not request a reset email.');
+            showAlert('If an account exists, a reset link will arrive shortly.', 'success');
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to send reset email';
             showAlert(message);
@@ -227,13 +172,14 @@ export default function ProfilePage() {
     };
 
     /**
-     * Signs the user out via Supabase Auth and returns to the homepage.
+     * Signs the user out via Better Auth and returns to the homepage.
      */
     const handleLogout = async () => {
         /**
-         * Clears Supabase Auth session tokens to complete sign-out.
+         * Clears Better Auth session tokens to complete sign-out.
          */
-        await supabase.auth.signOut();
+        const { error } = await authClient.signOut();
+        if (error) { showAlert(error.message || 'Could not sign out.'); return; }
         router.push('/');
     };
 

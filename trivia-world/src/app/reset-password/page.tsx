@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import PasswordValidator from '@/app/components/PasswordValidator';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+import { authClient } from '@/lib/auth-client';
 import { useAlert } from '@/context/AlertContext';
 
 /**
@@ -33,17 +33,18 @@ export default function ResetPasswordPage() {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<string | null>('Verifying your request...');
     const [isTokenValid, setIsTokenValid] = useState(false);
+    const [token, setToken] = useState('');
 
     useEffect(() => {
-        const hash = window.location.hash;
-        const params = new URLSearchParams(hash.substring(1));
-        const accessToken = params.get('access_token');
+        const params = new URLSearchParams(window.location.search);
+        const accessToken = params.get('token');
 
         if (!accessToken) {
             setError('Invalid or expired password reset link.');
             setMessage(null);
             setIsTokenValid(false);
         } else {
+            setToken(accessToken);
             setMessage('You can now reset your password.');
             setIsTokenValid(true);
         }
@@ -65,10 +66,10 @@ export default function ResetPasswordPage() {
         setError(null);
 
         try {
-            const { error: updateError } = await supabase.auth.updateUser({ password });
+            const { error: updateError } = await authClient.resetPassword({ newPassword: password, token });
 
             if (updateError) {
-                throw updateError;
+                throw new Error(updateError.message || 'Invalid or expired password reset link.');
             }
 
             showAlert('Password updated successfully! You can now sign in.', 'success');
@@ -91,7 +92,7 @@ export default function ResetPasswordPage() {
                     {message && !error && <p className="text-center text-green-300 mb-4">{message}</p>}
                     {error && <div className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
-                    {!error && (
+                    {isTokenValid && (
                         <>
                             {isTokenValid ? (
                                 <>
