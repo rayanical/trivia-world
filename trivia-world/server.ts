@@ -197,6 +197,8 @@ io.on('connection', (socket) => {
         return { id: socket.id, key: socket.data.key, userId: user?.id, name: name.slice(0, 15), avatar: user?.image || null, score: 0 };
     };
     socket.on('create-game', (payload: unknown) => {
+        if (!socket.connected) return;
+        const requestId = payload && typeof payload === 'object' && 'requestId' in payload && typeof payload.requestId === 'string' ? payload.requestId : undefined;
         const player = makePlayer(payload);
         if (!player) return socket.emit('join-error', 'Choose a player name.');
         if ([...games.values()].filter((g) => g.players.some((p) => p.key === player.key)).length >= 3 || games.size >= 1000) return socket.emit('join-error', 'Too many active lobbies. Leave an existing lobby first.');
@@ -205,7 +207,7 @@ io.on('connection', (socket) => {
         const game: Game = { id: randomUUID(), players: [player], host: socket.id, index: 0, phase: 'lobby', answers: [], endAt: null };
         games.set(code, game);
         socket.join(code);
-        socket.emit('game-created', code);
+        socket.emit('game-created', requestId ? { gameCode: code, requestId } : code);
         broadcast(code, game);
     });
     socket.on('join-game', (payload) => {
@@ -220,7 +222,7 @@ io.on('connection', (socket) => {
             socket.join(code);
         }
         broadcast(code, game);
-        socket.emit('join-success', { gameCode: code });
+        socket.emit('join-success', { gameCode: code, requestId: typeof payload?.requestId === 'string' ? payload.requestId : undefined });
     });
     socket.on('get-players', (code) => {
         const game = typeof code === 'string' ? games.get(code) : undefined;

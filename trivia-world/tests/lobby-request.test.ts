@@ -33,8 +33,26 @@ test('navigation cancels listeners and disconnected requests never queue an even
     const pending = requestLobby('create-game', {}, controller.signal);
     controller.abort();
     await expect(pending).rejects.toThrow('cancelled');
+    expect(socket.listeners('game-created')).toHaveLength(1);
+    const requestId = (emit.mock.calls[0][1] as {requestId: string}).requestId;
+    deliver('game-created', {gameCode: 'OLD01', requestId});
+    expect(emit.mock.calls.at(-1)?.[0]).toBe('leave-game');
     expect(socket.listeners('game-created')).toHaveLength(0);
     socket.connected = false;
     await expect(requestLobby('create-game', {}, new AbortController().signal)).rejects.toThrow('Connect');
-    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledTimes(2);
+});
+
+test('a cancelled late reply cannot resolve a newer lobby request', async () => {
+    socket.connected = true;
+    const controller = new AbortController();
+    const old = requestLobby('create-game', {}, controller.signal);
+    const oldId = (emit.mock.calls[0][1] as { requestId: string }).requestId;
+    controller.abort(); await expect(old).rejects.toThrow('cancelled');
+    const current = requestLobby('create-game', {}, new AbortController().signal);
+    const currentId = (emit.mock.calls[1][1] as { requestId: string }).requestId;
+    deliver('game-created', { gameCode: 'OLD01', requestId: oldId });
+    expect(socket.listeners('game-created')).toHaveLength(1);
+    deliver('game-created', { gameCode: 'NEW01', requestId: currentId });
+    expect(await current).toBe('NEW01');
 });

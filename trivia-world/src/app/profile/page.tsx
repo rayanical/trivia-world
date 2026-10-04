@@ -7,6 +7,8 @@ import { authClient } from '@/lib/auth-client';
 import { api, jsonBody } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useAlert } from '@/context/AlertContext';
+import { useSoloSaveState } from '@/hooks/useSoloSaveState';
+import SoloSaveStatus from '../components/SoloSaveStatus';
 import ProfileStats, { type UserStats } from './ProfileStats';
 
 
@@ -33,6 +35,7 @@ function ProfileContent() {
     const userEmail = user?.email || null;
     const [retry, setRetry] = useState(0);
     const userId = user?.id;
+    const hasPendingAnswers = useSoloSaveState().pending > 0;
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -59,7 +62,7 @@ function ProfileContent() {
                 setFetchingData(false);
             });
         return () => { ignore = true; controller.abort(); };
-    }, [userId, retry]);
+    }, [userId, retry, hasPendingAnswers]);
 
     /**
      * Persists username edits for the current user profile and refreshes cached context data.
@@ -248,7 +251,7 @@ function ProfileContent() {
                         </div>
                     </div>
                 </section>
-                <ProfileStats stats={stats} loading={fetchingData} error={error} onRetry={() => setRetry(value => value + 1)} />
+                <div><SoloSaveStatus /><ProfileStats stats={stats} loading={fetchingData} error={error} onRetry={() => setRetry(value => value + 1)} /></div>
             </main>
         </div>
     );

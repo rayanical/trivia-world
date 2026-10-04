@@ -118,7 +118,7 @@ test('solo answers are server scored and retries increment stats only once', asy
     const batch = await response.json();
     expect(batch).toHaveLength(10);
     const [question] = batch;
-    expect(question.correct_answer).toBeUndefined();
+    expect(question.correct_answer).toBe('4');
     expect((await post('/api/solo/answer', { id: question.id, answer: '4' }, '')).status).toBe(404);
     expect((await post('/api/solo/answer', { id: question.id, answer: 'not offered' })).status).toBe(400);
     const body = { id: question.id, answer: '4' };
@@ -137,6 +137,8 @@ test('guest solo questions use an owner token without creating account statistic
     const question = batch[batch.length - 1];
     expect((await post('/api/solo/answer', { id: question.id, answer: '4' }, '')).status).toBe(404);
     expect((await post('/api/solo/answer', { id: question.id, token: question.token, answer: '4' }, '')).ok).toBe(true);
+    const other = batch[0];
+    expect(await (await post('/api/solo/answer', { id: other.id, token: other.token, answer: '1', correct: true, score: 999 }, '')).json()).toEqual({ correct: false, correctAnswer: '4' });
 });
 
 test('password reset verifies a token and invalidates existing sessions', async () => {

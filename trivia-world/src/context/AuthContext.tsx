@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import { authClient } from '@/lib/auth-client';
 import type { Socket } from 'socket.io-client';
 import { useAlert } from './AlertContext';
+import { getAnswerOutbox } from '@/lib/answer-outbox';
 import { usePathname } from 'next/navigation';
 
 export type Profile = { username: string | null; avatar_url: string | null };
@@ -19,9 +20,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = session?.session.token;
     const pathname = usePathname();
     const [multiplayerRequested, setMultiplayerRequested] = useState(false);
-    const wantsMultiplayer = pathname.startsWith('/lobby/') || (pathname === '/' && multiplayerRequested);
+    const wantsMultiplayer = pathname === '/' || pathname === '/multiplayer' || pathname.startsWith('/lobby/') || multiplayerRequested;
     useEffect(() => { setMultiplayerRequested(false); }, [pathname]);
     const profile = useMemo<Profile | null>(() => session ? { username: session.user.name, avatar_url: session.user.image || null } : null, [session]);
+    const owner = session?.user.id || 'guest';
+    useEffect(() => {
+        const outbox = getAnswerOutbox();
+        outbox.setOwner(isPending || error ? null : owner);
+        const resume = () => { void outbox.flush(); };
+        window.addEventListener('online', resume);
+        return () => { window.removeEventListener('online', resume); outbox.setOwner(null); };
+    }, [owner, isPending, error]);
     const refreshProfile = useCallback(async () => { await refetch(); }, [refetch]);
 
     // The session request wakes Render without blocking the page. Retry quietly if
@@ -52,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 socket.disconnect();
                 setConnected(false);
             };
-        }).catch(() => { if (!disposed) showAlert('Could not load multiplayer. Please reload and try again.'); });
+        }).catch(() => { /* Foreground actions provide feedback; preconnection stays quiet. */ });
         return () => { disposed = true; cleanup?.(); };
     }, [isPending, error, token, wantsMultiplayer, showAlert]);
 
@@ -67,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const connectMultiplayer = useCallback(async (signal?: AbortSignal) => {
         if (signal?.aborted) return false;
-        if (!requireServer()) return false;
+        if (isPending || error) { showAlert('The server is waking up. Please try again in a moment.', 'warning'); return false; }
         const { socket, guestId } = await import('@/lib/socket');
         if (signal?.aborted) return false;
         socketRef.current = socket;
@@ -82,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 signal?.removeEventListener('abort', onAbort);
                 if (!ready) {
                     setMultiplayerRequested(false);
-                    socket.disconnect();
+                    // The provider owns this connection; keep its quiet reconnection alive.
                     if (!signal?.aborted) showAlert('Could not connect to the game server. Please try again shortly.', 'warning');
                 }
                 resolve(ready);
@@ -96,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             socket.once('connect_error', onError);
             socket.connect();
         });
-    }, [requireServer, token, showAlert]);
+    }, [isPending, error, token, showAlert]);
 
     const value = useMemo<AuthContextValue>(() => ({
         user: session?.user || null,

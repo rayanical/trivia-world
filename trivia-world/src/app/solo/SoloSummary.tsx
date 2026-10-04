@@ -1,4 +1,5 @@
 'use client';
+import SoloSaveStatus from '../components/SoloSaveStatus';
 type Props = { score: number; signedIn: boolean; onProfile: () => void; onHome: () => void; onLogin: () => void; resetGame: () => void };
 export default function SoloSummary({ score, signedIn, onProfile, onHome, onLogin, resetGame }: Props) {
 return (
@@ -17,6 +18,7 @@ return (
                     <h1 className="text-4xl font-bold">Game Over!</h1>
                     <p className="text-2xl mt-4">Correct Answers:</p>
                     <p className="text-6xl font-bold text-green-800 my-8">{score}</p>
+                    <SoloSaveStatus />
                     <div className="flex gap-4">
                         <button onClick={() => onHome()} className="flex-1 rounded-full bg-gray-700 hover:bg-gray-800 px-8 py-3 text-lg font-bold cursor-pointer">
                             Home

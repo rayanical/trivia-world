@@ -25,6 +25,11 @@ function getGuestName() {
  * @returns The solo trivia game interface with configuration controls and question flow.
  */
 export default function SoloGamePage() {
+    const { user } = useAuth();
+    return <SoloGameContent key={user?.id || 'guest'} />;
+}
+
+function SoloGameContent() {
     const router = useRouter();
     const { profile, requireServer } = useAuth();
 

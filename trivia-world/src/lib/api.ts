@@ -1,3 +1,7 @@
+export class ApiError extends Error {
+    constructor(message: string, public readonly status: number) { super(message); this.name = 'ApiError'; }
+}
+
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
     const timeout = AbortSignal.timeout(30_000);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
@@ -5,7 +9,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     let data;
     try { data = await response.json(); }
     catch { throw new Error('The server returned an unexpected response. Please try again shortly.'); }
-    if (!response.ok) throw new Error(data.error || 'The request failed. Please try again.');
+    if (!response.ok) throw new ApiError(data.error || 'The request failed. Please try again.', response.status);
     return data as T;
 }
 

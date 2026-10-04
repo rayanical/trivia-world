@@ -44,6 +44,19 @@ export function useLobbyGame() {
     const [amount, setAmount] = useState('10');
     const [isTimeLimitEnabled, setIsTimeLimitEnabled] = useState<boolean>(true);
     const [timeLimit, setTimeLimit] = useState('15');
+    useEffect(() => {
+        try {
+            const raw = sessionStorage.getItem(`lobbyDraft:${gameCode}`);
+            if (!raw) return;
+            sessionStorage.removeItem(`lobbyDraft:${gameCode}`);
+            const draft = JSON.parse(raw);
+            if (typeof draft.category === 'string') setCategory(draft.category);
+            if (typeof draft.difficulty === 'string') setDifficulty(draft.difficulty);
+            if (typeof draft.amount === 'string') setAmount(draft.amount);
+            if (typeof draft.timeLimit === 'string') setTimeLimit(draft.timeLimit);
+            if (typeof draft.isTimeLimitEnabled === 'boolean') setIsTimeLimitEnabled(draft.isTimeLimitEnabled);
+        } catch { /* A corrupt draft must not prevent joining a room. */ }
+    }, [gameCode]);
     const [inGame, setInGame] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
     const [timeLeft, setTimeLeft] = useState<number>(0);

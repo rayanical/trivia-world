@@ -129,7 +129,7 @@ routes.post('/solo/questions', express.json({ limit: '4kb' }), async (req, res) 
             SELECT id::uuid, user_id, guest_token_hash, difficulty, correct_answer, answers
             FROM jsonb_to_recordset($1::jsonb) AS x(id text, user_id text, guest_token_hash text, difficulty text, correct_answer text, answers jsonb)`,
             [JSON.stringify(rows.map(({id, token, q, answers}) => ({ id, user_id: userId, guest_token_hash: userId ? null : hashToken(token), difficulty: q.difficulty, correct_answer: q.correct_answer, answers })))]);
-        const publicQuestions = rows.map(({id, token, q, answers}) => ({id, token: userId ? undefined : token, question: q.question, category: q.category, difficulty: q.difficulty, all_answers: answers}));
+        const publicQuestions = rows.map(({id, token, q, answers}) => ({id, token: userId ? undefined : token, question: q.question, category: q.category, difficulty: q.difficulty, correct_answer: q.correct_answer, all_answers: answers}));
         await client.query('COMMIT');
         res.json(publicQuestions);
     } catch (error) { await client.query('ROLLBACK'); throw error; }

@@ -1,3 +1,4 @@
+import { QuestionPool } from './question-pool';
 import { randomInt } from 'node:crypto';
 import type { Difficulty } from './stats';
 
@@ -13,7 +14,7 @@ export function shuffle<T>(values: T[]): T[] {
     return result;
 }
 
-export async function fetchQuestions(amount: number, category?: string, difficulty?: string): Promise<Question[]> {
+async function loadQuestions(amount: number, category?: string, difficulty?: string): Promise<Question[]> {
     if (!Number.isInteger(amount) || amount < 1 || amount > 50) throw new Error('Question count must be 1–50.');
     if (category && !categories.includes(category)) throw new Error('Invalid category.');
     if (difficulty && !['easy', 'medium', 'hard'].includes(difficulty)) throw new Error('Invalid difficulty.');
@@ -33,4 +34,13 @@ export async function fetchQuestions(amount: number, category?: string, difficul
         }
         return { question: q.question.text, category: q.category, difficulty: q.difficulty, correct_answer: q.correctAnswer, incorrect_answers: q.incorrectAnswers };
     });
+}
+
+const questionPool = new QuestionPool(loadQuestions);
+export async function fetchQuestions(amount: number, category?: string, difficulty?: string): Promise<Question[]> {
+    // Validate even on a cache hit; untrusted filters never create arbitrary cache keys.
+    if (!Number.isInteger(amount) || amount < 1 || amount > 50) throw new Error('Question count must be 1–50.');
+    if (category && !categories.includes(category)) throw new Error('Invalid category.');
+    if (difficulty && !['easy', 'medium', 'hard'].includes(difficulty)) throw new Error('Invalid difficulty.');
+    return questionPool.take(amount, category, difficulty);
 }

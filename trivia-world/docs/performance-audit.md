@@ -93,6 +93,49 @@ sign-in restores the submit control, reset mode returns to sign-in, Escape
 restores focus, solo scoring/replay works, and multiplayer setup/scoring/results
 work against a disposable local backend.
 
+## Immediate interaction follow-up (2026-10-04)
+
+Solo question batches now include the answer key intentionally: casual solo play
+reveals correctness and updates the visible score synchronously. Server-side
+answer validation and idempotent statistics remain authoritative. Multiplayer
+answers remain hidden until reveal. This trades solo answer secrecy for immediate
+feedback; it does not make competitive multiplayer client-scored.
+
+- A tab-scoped sessionStorage outbox saves selected answers independently of the
+  game component, retries temporary failures with bounded exponential backoff,
+  isolates accounts, and reports permanently unsaved answers. It survives
+  navigation/reload within the tab. Closing the tab is best-effort (`keepalive`),
+  not guaranteed durable delivery; expired questions can no longer be saved.
+- Solo setup/hover prefetches a batch. The client retains at most four filter and
+  account combinations for five minutes, consumes each batch once, and starts
+  replenishing with five ready questions still available.
+- The backend has a consumable question pool with at most 12 filter combinations
+  and a ten-minute lifetime, sharing concurrent refill work. Issued entries are
+  removed from the pool; upstream providers can still repeat question text.
+- Homepage multiplayer connections start quietly after the session is ready.
+  The create button opens a local settings screen immediately while room creation
+  finishes. Draft settings carry into the real room; a code is shown only after
+  server confirmation. Slow connection feedback starts after 400 ms.
+- Room replies have request identities. Cancelled late replies leave the room,
+  rather than resolving a newer entry request or stranding a player in a lobby.
+- Profile statistics refresh when the background answer backlog finishes.
+- An older-backend compatibility path verifies solo answers remotely until the
+  deployed backend supplies answer keys.
+
+Verification: 27 tests / 106 assertions passed, covering queue ownership/reload,
+transient/permanent failures, both caches, late room replies, and existing
+integration behavior. Full React Doctor remains 100/100 with zero diagnostics.
+Build/lint/type checks pass. In a real browser with answer saves delayed by five
+seconds, feedback and Next were already available within a 285 ms tool round trip;
+a deliberately failed save retried successfully. A five-second room creation delay
+left category/difficulty/count editable and preserved those settings in the real
+lobby. This is functional evidence, not a claim of a measured 285 ms paint time.
+
+The latest production build estimates are 141 KB for home/profile, 143 KB for
+solo, 158 KB for lobby, and 135 KB for the new multiplayer setup route. The small
+bundle increase buys independent background saving and immediate local feedback.
+Hosting remains unchanged and room persistence is deferred as requested.
+
 ## Follow-up priorities
 
 1. Persist active multiplayer rooms across backend deployments/restarts.

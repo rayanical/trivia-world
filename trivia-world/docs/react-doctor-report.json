@@ -70,7 +70,7 @@
         "hasShadcnUi": false,
         "isPreES2023Target": true,
         "isStaticExport": false,
-        "sourceFileCount": 55
+        "sourceFileCount": 65
       },
       "diagnostics": [],
       "score": {
@@ -93,7 +93,9 @@
         "src/app/components/CustomSelect.tsx",
         "src/app/components/Footer.tsx",
         "src/app/components/Icon.tsx",
+        "src/app/components/LobbySettings.tsx",
         "src/app/components/PasswordValidator.tsx",
+        "src/app/components/SoloSaveStatus.tsx",
         "src/app/components/Spinner.tsx",
         "src/app/layout.tsx",
         "src/app/lobby/[gameCode]/LobbyJoin.tsx",
@@ -102,6 +104,7 @@
         "src/app/lobby/[gameCode]/LobbySetup.tsx",
         "src/app/lobby/[gameCode]/layout.tsx",
         "src/app/lobby/[gameCode]/page.tsx",
+        "src/app/multiplayer/page.tsx",
         "src/app/page.tsx",
         "src/app/profile/ProfileStats.tsx",
         "src/app/profile/page.tsx",
@@ -115,6 +118,8 @@
         "src/hooks/useAuthForm.ts",
         "src/hooks/useLobbyGame.ts",
         "src/hooks/useSoloGame.ts",
+        "src/hooks/useSoloSaveState.ts",
+        "src/lib/answer-outbox.ts",
         "src/lib/api.ts",
         "src/lib/auth-client.ts",
         "src/lib/categories.ts",
@@ -122,24 +127,29 @@
         "src/lib/lobby-request.ts",
         "src/lib/proxy-ip.ts",
         "src/lib/socket.ts",
+        "src/lib/solo-buffer.ts",
         "src/server/auth.ts",
         "src/server/config.ts",
         "src/server/connect-with-retry.ts",
         "src/server/db.ts",
+        "src/server/question-pool.ts",
         "src/server/routes.ts",
         "src/server/stats.ts",
         "src/server/trivia.ts",
         "tailwind.config.ts",
+        "tests/answer-outbox.test.ts",
         "tests/api.test.ts",
         "tests/connect-with-retry.test.ts",
         "tests/integration.test.ts",
         "tests/lobby-request.test.ts",
-        "tests/proxy-ip.test.ts"
+        "tests/proxy-ip.test.ts",
+        "tests/question-pool.test.ts",
+        "tests/solo-buffer.test.ts"
       ],
-      "analyzedFileCount": 55,
+      "analyzedFileCount": 65,
       "complete": true,
-      "scannedFileCount": 55,
-      "elapsedMilliseconds": 941.1547919999999
+      "scannedFileCount": 65,
+      "elapsedMilliseconds": 1419.283875
     }
   ],
   "diagnostics": [],
@@ -151,6 +161,6 @@
     "score": 100,
     "scoreLabel": "Great"
   },
-  "elapsedMilliseconds": 991.556,
+  "elapsedMilliseconds": 1531.2262090000002,
   "error": null
 }

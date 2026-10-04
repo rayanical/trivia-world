@@ -19,9 +19,15 @@ export default function WelcomePage() {
     const [name, setName] = useState('');
     const [gameCode, setGameCode] = useState('');
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-    const { user, profile, connectMultiplayer } = useAuth();
+    const { user, profile, connectMultiplayer, loading } = useAuth();
     const { showAlert } = useAlert();
-    const [pendingLobby, setPendingLobby] = useState<'create' | 'join' | null>(null);
+    const [pendingLobby, setPendingLobby] = useState<'join' | null>(null);
+    const [showConnection, setShowConnection] = useState(false);
+    useEffect(() => {
+        if (!pendingLobby) { setShowConnection(false); return; }
+        const timer = setTimeout(() => setShowConnection(true), 400);
+        return () => clearTimeout(timer);
+    }, [pendingLobby]);
     const lobbyRequest = useRef<AbortController | null>(null);
     useEffect(() => () => { lobbyRequest.current?.abort(); }, []);
 
@@ -35,7 +41,16 @@ export default function WelcomePage() {
     };
 
     const resolvedAvatar = profile?.avatar_url || null;
-    const preloadMultiplayer = () => { void import('@/lib/lobby-request').catch(() => {}); };
+    const preloadMultiplayer = () => { router.prefetch('/multiplayer'); void import('@/lib/lobby-request').catch(() => {}); };
+    useEffect(() => { router.prefetch('/multiplayer'); }, [router]);
+    const prepareSolo = () => {
+        router.prefetch('/solo');
+        if (!loading) void import('@/lib/solo-buffer').then(({ prefetchSoloQuestions }) => prefetchSoloQuestions(user?.id || 'guest')).catch(() => {});
+    };
+    const handleMultiplayer = () => {
+        sessionStorage.setItem('playerName', resolvePlayerName());
+        router.push('/multiplayer');
+    };
 
     /**
      * Routes the player to the solo gameplay flow after saving their display name.
@@ -46,20 +61,20 @@ export default function WelcomePage() {
         router.push('/solo');
     };
 
-    const enterLobby = async (kind: 'create' | 'join') => {
+    const enterLobby = async () => {
         if (lobbyRequest.current) return;
-        if (kind === 'join' && !/^[A-Z0-9]{5}$/.test(gameCode)) {
+        if (!/^[A-Z0-9]{5}$/.test(gameCode)) {
             showAlert('Please enter a valid five-character game code.', 'warning');
             return;
         }
         const controller = new AbortController();
         lobbyRequest.current = controller;
-        setPendingLobby(kind);
+        setPendingLobby('join');
         try {
             if (!await connectMultiplayer(controller.signal) || controller.signal.aborted) return;
             const { requestLobby } = await import('@/lib/lobby-request');
             const player = { name: resolvePlayerName(), avatar: resolvedAvatar };
-            const code = await requestLobby(kind === 'create' ? 'create-game' : 'join-game', kind === 'create' ? player : { gameCode, player }, controller.signal);
+            const code = await requestLobby('join-game', { gameCode, player }, controller.signal);
             sessionStorage.setItem('playerName', player.name);
             sessionStorage.setItem('joinedLobby', code);
             router.push(`/lobby/${code}`);
@@ -122,8 +137,8 @@ export default function WelcomePage() {
                     <div className="w-full max-w-md flex flex-col gap-4">
                         <button
                             onClick={handlePlaySolo}
-                            onPointerEnter={() => router.prefetch('/solo')}
-                            onFocus={() => router.prefetch('/solo')}
+                            onPointerEnter={prepareSolo}
+                            onFocus={prepareSolo}
                             className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <Icon name="person" />
@@ -131,14 +146,14 @@ export default function WelcomePage() {
                         </button>
 
                         <button
-                            onClick={() => void enterLobby('create')}
+                            onClick={handleMultiplayer}
                             onPointerEnter={preloadMultiplayer}
                             onFocus={preloadMultiplayer}
                             disabled={pendingLobby !== null}
                             className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <Icon name="groups" />
-                            <span className="truncate">{pendingLobby === 'create' ? 'Connecting…' : 'Create Multiplayer Game'}</span>
+                            <span className="truncate">Create Multiplayer Game</span>
                         </button>
                     </div>
 
@@ -160,13 +175,13 @@ export default function WelcomePage() {
                             onChange={(e) => setGameCode(e.target.value.toUpperCase())}
                         />
                         <button
-                            onClick={() => void enterLobby('join')}
+                            onClick={() => void enterLobby()}
                             onPointerEnter={preloadMultiplayer}
                             onFocus={preloadMultiplayer}
                             className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center rounded-md h-10 px-3 text-xs sm:px-4 sm:text-sm bg-[#16A34A] hover:bg-[#15803D] text-white font-bold cursor-pointer disabled:bg-gray-600 disabled:cursor-not-allowed"
                             disabled={pendingLobby !== null || !gameCode || gameCode.length !== 5}
                         >
-                            {pendingLobby === 'join' ? 'Connecting…' : 'Join Game'}
+                            {showConnection && pendingLobby === 'join' ? 'Connecting…' : 'Join Game'}
                         </button>
                         </div>
                     </div>
