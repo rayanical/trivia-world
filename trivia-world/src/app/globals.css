@@ -67,3 +67,7 @@ body {
         scroll-behavior: auto !important;
     }
 }
+
+body:has([data-game-theme='guess-who']) footer {
+    background-color: #0b1526;
+}

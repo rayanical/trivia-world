@@ -165,6 +165,9 @@ export default function WelcomePage() {
                             <Icon name="groups" />
                             <span className="truncate">Create Multiplayer Game</span>
                         </button>
+                        <button onClick={() => { sessionStorage.setItem('playerName', resolvePlayerName()); router.push('/guess-who'); }} onPointerEnter={() => router.prefetch('/guess-who')} onFocus={() => router.prefetch('/guess-who')} className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-3 sm:px-8 bg-blue-800 hover:bg-blue-900 text-white font-bold gap-3 cursor-pointer">
+                            <span aria-hidden="true">?</span><span>Guess Who</span>
+                        </button>
                     </div>
 
                     <div className="flex items-center gap-4 my-6 w-full max-w-md">

@@ -234,3 +234,20 @@ these are functional/layout checks, not real-device keyboard or performance
 benchmarks. Existing regression suite: 31 tests, 123 assertions passed; lint
 and TypeScript passed. Production build passed; full React Doctor scan remained
 100/100 with zero diagnostics.
+
+## Guess Who addition (2026-10-04)
+
+The new game lives in its own routes and socket namespace. The Trivia homepage
+only adds a prefetched navigation button; it does not import the catalogue or
+board UI. Local cross-outs are immediate and private; authoritative turn and
+win changes still require the server. Artwork is checked in and served locally,
+with 320px WebP portraits and SVG illustrations, eliminating runtime image-host
+and catalogue requests.
+
+React Doctor 0.9.14 remains 100/100 with zero diagnostics and no added suppressions.
+The production build estimates 142 KB first-load JavaScript for Trivia home,
+153 KB for Guess Who home and 164 KB for a Guess Who room. These are bundle
+estimates, not measurements of interaction latency. Forty tests / 196 assertions,
+lint, type checking and build pass. Two-player browser checks cover rules,
+reconnection and mobile layouts; a clean production-rendered invitation hydrates
+without a new mismatch.

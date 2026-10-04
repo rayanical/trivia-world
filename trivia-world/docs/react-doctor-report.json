@@ -70,7 +70,7 @@
         "hasShadcnUi": false,
         "isPreES2023Target": true,
         "isStaticExport": false,
-        "sourceFileCount": 69
+        "sourceFileCount": 88
       },
       "diagnostics": [],
       "score": {
@@ -84,6 +84,7 @@
         "next.config.ts",
         "postcss.config.mjs",
         "scripts/migrate.ts",
+        "scripts/optimize-guess-who.ts",
         "server.ts",
         "src/app/api/[...path]/route.ts",
         "src/app/components/Alert.tsx",
@@ -101,6 +102,20 @@
         "src/app/components/PasswordValidator.tsx",
         "src/app/components/SoloSaveStatus.tsx",
         "src/app/components/Spinner.tsx",
+        "src/app/guess-who/GuessBoard.tsx",
+        "src/app/guess-who/GuessChat.tsx",
+        "src/app/guess-who/GuessConnection.tsx",
+        "src/app/guess-who/GuessHeader.tsx",
+        "src/app/guess-who/GuessInvite.tsx",
+        "src/app/guess-who/GuessRoom.tsx",
+        "src/app/guess-who/GuessRound.tsx",
+        "src/app/guess-who/credits/page.tsx",
+        "src/app/guess-who/layout.tsx",
+        "src/app/guess-who/page.tsx",
+        "src/app/guess-who/play/page.tsx",
+        "src/app/guess-who/room/[code]/page.tsx",
+        "src/app/guess-who/ui.tsx",
+        "src/app/guess-who/useGuessRoom.ts",
         "src/app/layout.tsx",
         "src/app/lobby/[gameCode]/LobbyJoin.tsx",
         "src/app/lobby/[gameCode]/LobbyQuestion.tsx",
@@ -128,6 +143,7 @@
         "src/lib/auth-client.ts",
         "src/lib/categories.ts",
         "src/lib/email-auth.ts",
+        "src/lib/guess-who/types.ts",
         "src/lib/lobby-request.ts",
         "src/lib/proxy-ip.ts",
         "src/lib/socket.ts",
@@ -136,6 +152,8 @@
         "src/server/config.ts",
         "src/server/connect-with-retry.ts",
         "src/server/db.ts",
+        "src/server/guess-who/engine.ts",
+        "src/server/guess-who/transport.ts",
         "src/server/question-pool.ts",
         "src/server/routes.ts",
         "src/server/stats.ts",
@@ -144,16 +162,17 @@
         "tests/answer-outbox.test.ts",
         "tests/api.test.ts",
         "tests/connect-with-retry.test.ts",
+        "tests/guess-who.test.ts",
         "tests/integration.test.ts",
         "tests/lobby-request.test.ts",
         "tests/proxy-ip.test.ts",
         "tests/question-pool.test.ts",
         "tests/solo-buffer.test.ts"
       ],
-      "analyzedFileCount": 69,
+      "analyzedFileCount": 88,
       "complete": true,
-      "scannedFileCount": 69,
-      "elapsedMilliseconds": 1401.829042
+      "scannedFileCount": 88,
+      "elapsedMilliseconds": 1600.290167
     }
   ],
   "diagnostics": [],
@@ -165,6 +184,6 @@
     "score": 100,
     "scoreLabel": "Great"
   },
-  "elapsedMilliseconds": 1530.0765000000001,
+  "elapsedMilliseconds": 1887.6619170000001,
   "error": null
 }

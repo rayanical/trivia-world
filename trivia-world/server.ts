@@ -11,6 +11,7 @@ import { routes } from './src/server/routes';
 import { fetchQuestions, shuffle, type Question } from './src/server/trivia';
 import { recordGame, recordQuestion } from './src/server/stats';
 import { verifiedClientIp } from './src/lib/proxy-ip';
+import { attachGuessWho } from './src/server/guess-who/transport';
 
 interface Player {
     id: string;
@@ -158,7 +159,7 @@ function evaluate(code: string, game: Game) {
     game.timer = setTimeout(() => { game.index++; sendQuestion(code, game); }, 3000);
 }
 
-io.use(async (socket, next) => {
+const authenticateSocket: Parameters<typeof io.use>[0] = async (socket, next) => {
     try {
         const token = socket.handshake.auth?.token;
         if (token !== undefined && typeof token !== 'string') return next(new Error('Invalid session.'));
@@ -169,7 +170,11 @@ io.use(async (socket, next) => {
         socket.data.key = session ? `user:${session.user.id}` : `guest:${typeof guestId === 'string' && /^[0-9a-f-]{36}$/i.test(guestId) ? guestId : randomUUID()}`;
         next();
     } catch { next(new Error('Unable to verify your session. Please reconnect.')); }
-});
+};
+io.use(authenticateSocket);
+const guessNamespace = io.of('/guess');
+guessNamespace.use(authenticateSocket);
+const stopGuessWho = attachGuessWho(guessNamespace);
 
 function restorePlayer(socket: Socket, game: Game, code: string) {
     const player = game.players.find((p) => p.key === socket.data.key);
@@ -322,6 +327,7 @@ io.on('connection', (socket) => {
 
 server.listen(process.env.PORT || 3001, () => console.info('Trivia server is listening.'));
 export async function stopServer() {
+    stopGuessWho();
     for (const [code, game] of games) destroyGame(code, game);
     io.close();
     server.close();
