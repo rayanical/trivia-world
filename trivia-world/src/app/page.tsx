@@ -99,7 +99,7 @@ export default function WelcomePage() {
     return (
         <div className="relative flex min-h-svh w-full flex-col bg-[#101710]">
             <div className="absolute top-4 right-4 left-4 flex flex-wrap items-center justify-end gap-2">
-                <button onClick={() => { try { sessionStorage.setItem('playerName', resolvePlayerName()); } catch {} router.push('/guess-who'); }} onPointerEnter={() => router.prefetch('/guess-who')} onFocus={() => router.prefetch('/guess-who')} className="min-h-11 rounded-md bg-blue-800 px-3 text-sm font-semibold text-white hover:bg-blue-900 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-200">Guess Who</button>
+                <button onClick={() => { try { sessionStorage.setItem('playerName', resolvePlayerName()); } catch {} router.push('/guess-who'); }} onPointerEnter={() => router.prefetch('/guess-who')} onFocus={() => router.prefetch('/guess-who')} className="min-h-11 inline-flex items-center justify-center gap-2 rounded-md bg-blue-800 px-3 text-sm font-semibold text-white hover:bg-blue-900 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-200"><span aria-hidden="true">?</span><span>Guess Who</span></button>
                 {user ? (
                     <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                         Profile
