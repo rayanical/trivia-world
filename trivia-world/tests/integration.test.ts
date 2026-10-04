@@ -340,6 +340,12 @@ test('Guess Who namespace isolates secrets, rejects stale commands and restores 
     const created = await request(alice.connection, { type: 'create', name: 'Alice' });
     expect(created.error).toBeUndefined(); const code = created.state!.code;
     let state = (await request(bob.connection, { type: 'join', name: 'Bob' }, code)).state!;
+    expect(state.players.map(player => player.ready)).toEqual([true, false]);
+    const readyReply = await bob.connection.timeout(5000).emitWithAck('guess-action', { requestId: randomUUID(), code, version: state.version, action: { type: 'ready', ready: true, playerId: state.players[0].id } });
+    state = readyReply.state;
+    expect(state.players.map(player => player.ready)).toEqual([true, true]);
+    state = (await request(bob.connection, { type: 'ready', ready: false }, code, state.version)).state!;
+    expect(state.players.map(player => player.ready)).toEqual([true, false]);
     expect((await request(outsider.connection, { type: 'join', name: 'Eve' }, code)).error).toContain('full');
     expect((await request(outsider.connection, { type: 'state' }, code)).state).toBeUndefined();
     expect((await request(bob.connection, { type: 'start' }, code, state.version)).error).toContain('host');

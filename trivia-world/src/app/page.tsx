@@ -98,7 +98,8 @@ export default function WelcomePage() {
 
     return (
         <div className="relative flex min-h-svh w-full flex-col bg-[#101710]">
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-4 right-4 left-4 flex flex-wrap items-center justify-end gap-2">
+                <button onClick={() => { try { sessionStorage.setItem('playerName', resolvePlayerName()); } catch {} router.push('/guess-who'); }} onPointerEnter={() => router.prefetch('/guess-who')} onFocus={() => router.prefetch('/guess-who')} className="min-h-11 rounded-md bg-blue-800 px-3 text-sm font-semibold text-white hover:bg-blue-900 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-200">Guess Who</button>
                 {user ? (
                     <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
                         Profile
@@ -165,9 +166,7 @@ export default function WelcomePage() {
                             <Icon name="groups" />
                             <span className="truncate">Create Multiplayer Game</span>
                         </button>
-                        <button onClick={() => { sessionStorage.setItem('playerName', resolvePlayerName()); router.push('/guess-who'); }} onPointerEnter={() => router.prefetch('/guess-who')} onFocus={() => router.prefetch('/guess-who')} className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-3 sm:px-8 bg-blue-800 hover:bg-blue-900 text-white font-bold gap-3 cursor-pointer">
-                            <span aria-hidden="true">?</span><span>Guess Who</span>
-                        </button>
+
                     </div>
 
                     <div className="flex items-center gap-4 my-6 w-full max-w-md">

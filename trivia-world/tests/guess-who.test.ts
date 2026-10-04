@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { applyAction, createRoom, viewRoom, type RoomPlayer } from '../src/server/guess-who/engine';
 import type { GuessCard } from '../src/lib/guess-who/types';
 const cards: GuessCard[] = ['animals', 'foods', 'celebrities'].flatMap(category => Array.from({ length: 45 }, (_, i) => ({ id: `${category}-${i}`, name: `${category} ${i}`, image: `/test/${i}.svg`, category: category === 'animals' ? 'animals' : category === 'foods' ? 'foods' : 'celebrities' })));
-const player = (id: string): RoomPlayer => ({ id, key: `guest:${id}`, socketId: id, name: id, connected: true, secretId: null, skipNext: false });
+const player = (id: string): RoomPlayer => ({ id, key: `guest:${id}`, socketId: id, name: id, connected: true, ready: true, secretId: null, skipNext: false });
 function setup(chat = true) {
     const room = createRoom('ABCDE', player('Alice')); room.players.push(player('Bob'));
     applyAction(room, 'Alice', { type: 'settings', category: 'animals', chat }, cards);
@@ -100,4 +100,22 @@ test('starter catalogue has distinct named cards, local artwork and recorded lic
     for (const category of ['animals', 'foods', 'celebrities']) expect(catalogue.filter(card => card.category === category).length).toBeGreaterThanOrEqual(40);
     expect(catalogue.every(card => card.name && card.author && card.license && card.source.startsWith('https://'))).toBe(true);
     expect(catalogue.every(card => existsSync(join(import.meta.dir, '../public', card.image)))).toBe(true);
+});
+
+test('ready status is player-owned, survives snapshots and resets for a new round', () => {
+    const room = createRoom('ABCDE', player('Alice')); room.players.push(player('Bob'));
+    applyAction(room, 'Bob', { type: 'ready', ready: false }, cards);
+    expect(viewRoom(room, 'Alice').players.map(p => p.ready)).toEqual([true, false]);
+    applyAction(room, 'Bob', { type: 'ready', ready: true }, cards);
+    expect(viewRoom(room, 'Bob').players.map(p => p.ready)).toEqual([true, true]);
+    applyAction(room, 'Alice', { type: 'start' }, cards);
+    expect(room.players.every(p => !p.ready)).toBe(true);
+    expect(() => applyAction(room, 'Alice', { type: 'ready', ready: true }, cards)).toThrow();
+    applyAction(room, 'Alice', { type: 'select', cardId: room.board[0].id }, cards);
+    applyAction(room, 'Bob', { type: 'select', cardId: room.board[0].id }, cards);
+    applyAction(room, 'Alice', { type: 'guess', cardId: room.board[0].id }, cards);
+    applyAction(room, 'Bob', { type: 'ready', ready: true }, cards);
+    expect(viewRoom(room, 'Alice').players[1].ready).toBe(true);
+    applyAction(room, 'Alice', { type: 'rematch' }, cards);
+    expect(room.players.every(p => !p.ready)).toBe(true);
 });

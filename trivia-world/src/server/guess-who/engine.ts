@@ -1,5 +1,5 @@
 import type { GuessAction, GuessCard, GuessMessage, GuessSettings, GuessState } from '../../lib/guess-who/types';
-export type RoomPlayer = { id: string; key: string; socketId: string; name: string; connected: boolean; secretId: string | null; skipNext: boolean };
+export type RoomPlayer = { id: string; key: string; socketId: string; name: string; connected: boolean; ready: boolean; secretId: string | null; skipNext: boolean };
 export type GuessRoom = {
     code: string; version: number; round: number; phase: GuessState['phase']; hostId: string; players: RoomPlayer[];
     settings: GuessSettings; category: GuessState['category']; board: GuessCard[]; turnId: string | null;
@@ -14,7 +14,7 @@ export function viewRoom(room: GuessRoom, playerId: string): GuessState {
     return { code: room.code, version: room.version, round: room.round, phase: room.phase, hostId: room.hostId, meId: playerId,
         settings: { ...room.settings }, category: room.category, board: room.board, turnId: room.turnId, winnerId: room.winnerId,
         pendingQuestion: room.pendingQuestion, messages: room.messages, secretId: me.secretId,
-        players: room.players.map(p => ({ id: p.id, name: p.name, connected: p.connected, picked: Boolean(p.secretId), skipNext: p.skipNext })),
+        players: room.players.map(p => ({ id: p.id, name: p.name, connected: p.connected, ready: p.ready, picked: Boolean(p.secretId), skipNext: p.skipNext })),
         revealedSecrets: room.phase === 'finished' ? room.players.flatMap(p => p.secretId ? [{ playerId: p.id, cardId: p.secretId }] : []) : [] };
 }
 function message(room: GuessRoom, text: string, kind: GuessMessage['kind'] = 'notice', playerId?: string) {
@@ -52,6 +52,9 @@ export function applyAction(room: GuessRoom, playerId: string, action: GuessActi
     };
     if (['start', 'rematch', 'select', 'ask', 'answer', 'guess', 'end-turn'].includes(action.type) && (room.players.length !== 2 || room.players.some(p => !p.connected))) throw new Error('Waiting for both players to be connected.');
     switch (action.type) {
+        case 'ready':
+            if (room.phase !== 'lobby' && room.phase !== 'finished') throw new Error('Ready status is only available between rounds.');
+            player.ready = action.ready; break;
         case 'settings':
             hostOnly();
             if (room.phase !== 'lobby') throw new Error('Settings are locked during a round.');
@@ -69,7 +72,7 @@ export function applyAction(room: GuessRoom, playerId: string, action: GuessActi
             room.board = sample([...fresh, ...repeats].slice(0, 20), random);
             room.category = category; room.round++; room.phase = 'choosing'; room.turnId = null; room.winnerId = null;
             room.pendingQuestion = null; room.messages = []; room.nextMessage = 0;
-            for (const p of room.players) { p.secretId = null; p.skipNext = false; }
+            for (const p of room.players) { p.secretId = null; p.skipNext = false; p.ready = false; }
             message(room, 'Choose a secret card. Your opponent cannot see your choice.'); break;
         }
         case 'select':

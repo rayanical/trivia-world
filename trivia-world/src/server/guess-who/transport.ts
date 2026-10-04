@@ -22,6 +22,9 @@ function parseRequest(value: unknown): GuessRequest {
     switch (action.type) {
         case 'create': parsed = { type: 'create', name: text(action.name, 100).slice(0, 15), fresh: action.fresh === true }; break;
         case 'join': parsed = { type: 'join', name: text(action.name, 100).slice(0, 15) }; break;
+        case 'ready':
+            if (typeof action.ready !== 'boolean') throw new Error('Choose a valid ready status.');
+            parsed = { type: 'ready', ready: action.ready }; break;
         case 'settings': {
             const category = guessCategories.find(c => c.id === action.category)?.id;
             if (!category || typeof action.chat !== 'boolean') throw new Error('Choose a valid category and chat setting.');
@@ -92,7 +95,7 @@ export function attachGuessWho(namespace: Namespace) {
                         if (rooms.size >= 1000) throw new Error('Too many active rooms. Please try again shortly.');
                         let code: string;
                         do { code = randomUUID().replaceAll('-', '').slice(0, 5).toUpperCase(); } while (rooms.has(code));
-                        player = { id: randomUUID(), key: socket.data.key, socketId: socket.id, name: (socket.data.user?.name || request.action.name).slice(0, 15), connected: true, secretId: null, skipNext: false };
+                        player = { id: randomUUID(), key: socket.data.key, socketId: socket.id, name: (socket.data.user?.name || request.action.name).slice(0, 15), connected: true, ready: true, secretId: null, skipNext: false };
                         room = createRoom(code, player); rooms.set(code, room); socket.join(code);
                     } else player = restore(room, socket);
                 } else {
@@ -103,7 +106,7 @@ export function attachGuessWho(namespace: Namespace) {
                             if (room.players.length >= 2 || room.phase !== 'lobby') throw new Error('This room is full or the round has already started.');
                             // Each identity can belong to only one Guess Who room at a time.
                             if ([...rooms.values()].some(r => r.players.some(p => p.key === socket.data.key))) throw new Error('Leave your other Guess Who room first.');
-                            player = { id: randomUUID(), key: socket.data.key, socketId: socket.id, name: (socket.data.user?.name || request.action.name).slice(0, 15), connected: true, secretId: null, skipNext: false };
+                            player = { id: randomUUID(), key: socket.data.key, socketId: socket.id, name: (socket.data.user?.name || request.action.name).slice(0, 15), connected: true, ready: false, secretId: null, skipNext: false };
                             room.players.push(player); room.version++; socket.join(room.code);
                         }
                     } else {

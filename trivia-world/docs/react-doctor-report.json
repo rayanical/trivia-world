@@ -70,7 +70,7 @@
         "hasShadcnUi": false,
         "isPreES2023Target": true,
         "isStaticExport": false,
-        "sourceFileCount": 88
+        "sourceFileCount": 89
       },
       "diagnostics": [],
       "score": {
@@ -107,6 +107,7 @@
         "src/app/guess-who/GuessConnection.tsx",
         "src/app/guess-who/GuessHeader.tsx",
         "src/app/guess-who/GuessInvite.tsx",
+        "src/app/guess-who/GuessPlayers.tsx",
         "src/app/guess-who/GuessRoom.tsx",
         "src/app/guess-who/GuessRound.tsx",
         "src/app/guess-who/credits/page.tsx",
@@ -169,10 +170,10 @@
         "tests/question-pool.test.ts",
         "tests/solo-buffer.test.ts"
       ],
-      "analyzedFileCount": 88,
+      "analyzedFileCount": 89,
       "complete": true,
-      "scannedFileCount": 88,
-      "elapsedMilliseconds": 1600.290167
+      "scannedFileCount": 89,
+      "elapsedMilliseconds": 1890.7714580000002
     }
   ],
   "diagnostics": [],
@@ -184,6 +185,6 @@
     "score": 100,
     "scoreLabel": "Great"
   },
-  "elapsedMilliseconds": 1887.6619170000001,
+  "elapsedMilliseconds": 2036.2167920000002,
   "error": null
 }

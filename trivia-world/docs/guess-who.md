@@ -2,7 +2,7 @@
 
 ## Product rules
 
-The Trivia homepage links to a separate blue Guess Who homepage. A host creates a room, chooses celebrities, animals, foods or a random category, and chooses whether text chat is enabled. The room accepts exactly two players. Both receive the same random 20-card board and privately lock a secret; choosing the same card is allowed.
+The Trivia homepage links to a separate blue Guess Who homepage. A host creates a room, chooses celebrities, animals, foods or a random category, and chooses whether text chat is enabled. The room accepts exactly two players. Players can toggle Ready Up / Mark Not Ready in the lobby and after a round. Like Trivia, readiness is a signal for the host, who decides when to start; connecting alone does not mark a guest ready. Readiness resets when a new round starts. Both receive the same random 20-card board and privately lock a secret; choosing the same card is allowed.
 
 Players take turns asking questions. With chat enabled, the current player submits one yes/no question and the opponent answers Yes, No or Not sure, passing the turn. With chat disabled, players talk in person or on their own call and use End Turn. Either mode allows a confirmed final guess instead of a question. A correct guess wins immediately; a wrong guess uses the current turn and skips the next, giving the opponent two consecutive turns. There is no timer or solo mode.
 
@@ -33,7 +33,7 @@ Existing assets are reused. Set `GUESS_REFRESH_IMAGES=1` when deliberately refre
 
 ## Validation
 
-- 40 passing tests, including rule tests and real Socket.IO integration tests for secret isolation, ownership, stale/duplicate actions, reconnection, new-room creation and abandonment.
+- 41 passing tests, including rule tests and real Socket.IO integration tests for secret isolation, ownership, stale/duplicate actions, reconnection, new-room creation and abandonment.
 - ESLint, TypeScript and production build.
 - React Doctor: 100/100, zero diagnostics.
 - Two browser players: chat questions/replies, chat-off End Turn, wrong-guess penalty, correct win, identical secrets, private cross-outs, reload recovery, fresh rematch and leaving.

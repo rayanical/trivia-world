@@ -8,6 +8,7 @@ import { useGuessRoom } from './useGuessRoom';
 import { GuessButton, inputClass, panelClass } from './ui';
 import GuessRound from './GuessRound';
 import GuessInvite from './GuessInvite';
+import GuessPlayers from './GuessPlayers';
 export default function GuessRoom({ create = false, code }: { create?: boolean; code?: string }) {
     const { user } = useAuth(); return <GuessRoomContent key={user?.id || 'guest'} create={create} code={code} />;
 }
@@ -60,6 +61,6 @@ function GuessLobby({ state, act, pending, connected }: { state: GuessState | nu
             </> : <p className="text-blue-100/70">The host is choosing the category and chat setting. The game starts when both players are here.</p>}
             <div className="mt-6 space-y-2 text-sm text-blue-100/70"><p>20 cards · 2 players · No timer</p><p>Pick a secret, then take turns asking yes/no questions.</p><p>A wrong guess uses this turn and skips your next one.</p><p>Both players can choose the same secret card.</p></div>
         </div>
-        <div className="space-y-4"><div className={panelClass}><h2 className="mb-3 font-bold">Players ({state?.players.length || 1}/2)</h2><ul className="space-y-2">{state ? state.players.map(player => <li key={player.id} className="flex min-w-0 items-center justify-between gap-2 rounded-md bg-white/5 p-3 text-sm"><span className="min-w-0 break-words">{player.id === state.meId ? 'You' : player.name}{player.id === state.hostId ? ' · Host' : ''}</span><span className="shrink-0 text-blue-200">{player.connected ? 'Ready' : 'Reconnecting'}</span></li>) : <li className="rounded-md bg-white/5 p-3 text-sm text-blue-200">You · Host</li>}</ul><p className="mt-3 min-h-6 text-xs text-blue-100/60">{state?.players.length === 2 ? 'Both players are here.' : 'Invite a friend to fill the second spot.'}</p></div><GuessInvite code={state?.code || ''} /></div>
+        <div className="space-y-4"><GuessPlayers state={state} act={act} canAct={connected && !pending} /><GuessInvite code={state?.code || ''} /></div>
     </div>;
 }

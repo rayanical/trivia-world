@@ -4,6 +4,7 @@ import { guessCategories, type GuessAction, type GuessCard, type GuessState } fr
 import { GuessButton, panelClass } from './ui';
 import GuessBoard, { CardArtwork } from './GuessBoard';
 import GuessChat from './GuessChat';
+import GuessPlayers from './GuessPlayers';
 type Props = { state: GuessState; act: (action: GuessAction) => Promise<boolean>; pending: boolean; connected: boolean };
 function readCrossed(state: GuessState) {
     try {
@@ -65,5 +66,5 @@ function RoundResult({ state, canAct, act }: { state: GuessState; canAct: boolea
     return <div className={`${panelClass} mb-5`}><h3 className="mb-4 font-semibold">The secret cards</h3><div className="flex flex-wrap gap-4">{state.revealedSecrets.map(reveal => {
         const card = state.board.find(item => item.id === reveal.cardId); if (!card) return null;
         return <div key={reveal.playerId} className="w-28 text-center"><CardArtwork card={card} className="h-24" /><p className="mt-2 break-words text-sm font-bold">{card.name}</p><p className="text-xs text-blue-100/60">{state.players.find(player => player.id === reveal.playerId)?.name}</p></div>;
-    })}</div><div className="mt-5">{state.hostId === state.meId ? <GuessButton disabled={!canAct} onClick={() => void act({ type: 'rematch' })}>Rematch · Fresh Board</GuessButton> : <p className="text-sm text-blue-100/70">Waiting for the host to start a rematch.</p>}</div></div>;
+    })}</div><div className="mt-5"><GuessPlayers state={state} act={act} canAct={canAct} /></div><div className="mt-5">{state.hostId === state.meId ? <GuessButton disabled={!canAct} onClick={() => void act({ type: 'rematch' })}>Rematch · Fresh Board</GuessButton> : <p className="text-sm text-blue-100/70">Waiting for the host to start a rematch.</p>}</div></div>;
 }
