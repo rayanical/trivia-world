@@ -20,6 +20,7 @@ export const auth = betterAuth({
     // Public frontend URL: auth requests reach this backend through the Next proxy.
     baseURL: process.env.BETTER_AUTH_URL || frontendUrl,
     trustedOrigins,
+    advanced: { ipAddress: { ipAddressHeaders: ['x-trivia-client-ip'] } },
     plugins: [bearer()],
     emailAndPassword: {
         enabled: true,

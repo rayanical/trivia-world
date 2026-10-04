@@ -29,13 +29,13 @@ routes.use(async (req, res, next) => {
     } catch (error) { next(error); }
 });
 
-// A bounded limiter also covers anonymous solo requests from each upstream host.
+// A bounded limiter also covers anonymous solo requests using the verified client IP.
 const limits = new Map<string, { count: number; reset: number }>();
 routes.use((req, res, next) => {
     if (['GET', 'HEAD'].includes(req.method)) return next();
     const now = Date.now();
     for (const [key, value] of limits) if (value.reset <= now) limits.delete(key);
-    const key = res.locals.session?.user.id || req.ip || 'anonymous';
+    const key = res.locals.session?.user.id || res.locals.clientIp || 'anonymous';
     const current = limits.get(key) || { count: 0, reset: now + 60_000 };
     if (++current.count > 120 || limits.size > 10_000) return void res.status(429).json({ error: 'Too many requests. Please wait a minute.' });
     limits.set(key, current);

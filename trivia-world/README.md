@@ -50,6 +50,8 @@ Render supplies `PORT`. Bun must be available in the runtime. An optional
 On **Vercel**, set `BACKEND_URL=https://api.triviaworld.live` (server only) and
 `NEXT_PUBLIC_SOCKET_URL=https://api.triviaworld.live`, then rebuild. Configure
 Render before deploying the frontend. Old Supabase keys are no longer used.
+Set the same random `PROXY_SHARED_SECRET` on Render and Vercel. It authenticates
+forwarded client IPs for per-player rate limits; keep it server-only.
 This migration starts with fresh accounts and statistics; it does not import
 Supabase data or delete the old Supabase project.
 

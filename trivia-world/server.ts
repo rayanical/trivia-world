@@ -3,13 +3,14 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Server, type Socket } from 'socket.io';
 import cors from 'cors';
-import { toNodeHandler } from 'better-auth/node';
+import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
 import { auth } from './src/server/auth';
 import { db } from './src/server/db';
 import { trustedOrigins } from './src/server/config';
 import { routes } from './src/server/routes';
 import { fetchQuestions, shuffle, type Question } from './src/server/trivia';
 import { recordGame, recordQuestion } from './src/server/stats';
+import { verifiedClientIp } from './src/lib/proxy-ip';
 
 interface Player {
     id: string;
@@ -39,6 +40,14 @@ interface Game {
 }
 
 const app = express();
+app.use((req, res, next) => {
+    const ip = verifiedClientIp(fromNodeHeaders(req.headers), process.env.PROXY_SHARED_SECRET) || req.socket.remoteAddress;
+    // Overwrite unsigned input even for clients reaching Render directly.
+    if (ip) req.headers['x-trivia-client-ip'] = ip;
+    else delete req.headers['x-trivia-client-ip'];
+    res.locals.clientIp = ip;
+    next();
+});
 app.use(cors({ origin: trustedOrigins, credentials: true }));
 app.all('/api/auth/*splat', toNodeHandler(auth));
 app.use('/api', routes);

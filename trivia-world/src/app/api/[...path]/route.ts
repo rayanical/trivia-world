@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { signClientIp } from '@/lib/proxy-ip';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,11 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     for (const name of ['cookie', 'content-type', 'origin', 'referer', 'sec-fetch-site', 'sec-fetch-mode', 'if-none-match']) {
         const value = request.headers.get(name);
         if (value) headers.set(name, value);
+    }
+    // Vercel overwrites this header at its edge; never forward client-supplied signatures.
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0].trim();
+    if (clientIp && process.env.PROXY_SHARED_SECRET) {
+        for (const [name, value] of Object.entries(signClientIp(clientIp, process.env.PROXY_SHARED_SECRET))) headers.set(name, value);
     }
     try {
         if (Number(request.headers.get('content-length')) > 2 * 1024 * 1024) return Response.json({ error: 'Maximum upload size is 2 MB.' }, { status: 413 });

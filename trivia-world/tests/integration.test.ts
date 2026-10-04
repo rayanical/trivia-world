@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, mock, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { io, type Socket } from 'socket.io-client';
+import { signClientIp } from '../src/lib/proxy-ip';
 
 // Run only against a disposable local database. No production emails or trivia calls.
 const testDatabase = process.env.TEST_DATABASE_URL;
@@ -14,6 +15,8 @@ process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 process.env.BETTER_AUTH_SECRET = 'local-test-secret-not-for-production-12345678';
 process.env.RESEND_API_KEY = 're_test';
 process.env.RESEND_FROM_EMAIL = 'test@example.com';
+const testProxySecret = 'test-proxy-shared-secret';
+process.env.PROXY_SHARED_SECRET = testProxySecret;
 process.env.PORT = '3101';
 const base = 'http://127.0.0.1:3101';
 const emails: { to: string; text: string }[] = [];
@@ -62,12 +65,17 @@ beforeAll(async () => {
     const url = new URL(verification);
     const verified = await fetch(`${base}${url.pathname}${url.search}`, { redirect: 'manual' });
     expect(verified.status).toBe(302);
-    const signin = await post('/api/auth/sign-in/email', { email, password: 'TestPass123!' }, '');
+    const signin = await fetch(`${base}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json', ...signClientIp('198.51.100.20', testProxySecret) },
+        body: JSON.stringify({ email, password: 'TestPass123!' }),
+    });
     expect(signin.ok).toBe(true);
     cookie = signin.headers.getSetCookie().map((value) => value.split(';')[0]).join('; ');
     const session = await (await fetch(`${base}/api/auth/get-session`, { headers: { Cookie: cookie } })).json();
     token = session.session.token;
     userId = session.user.id;
+    expect(session.session.ipAddress).toBe('198.51.100.20');
 }, 20_000);
 
 afterAll(async () => {
