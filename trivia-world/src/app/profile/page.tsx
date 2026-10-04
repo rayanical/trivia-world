@@ -148,21 +148,21 @@ function ProfileContent() {
     return (
         <div className="min-h-screen bg-[#101710] text-white p-4 md:p-6">
             <header className="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <button onClick={handleBackHome} className="text-sm px-3 py-1 rounded-md bg-white/6 hover:bg-white/10 cursor-pointer">
                         ← Home
                     </button>
                     <h1 className="text-3xl font-bold">Your Profile</h1>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <button onClick={handleLogout} className="px-3 py-1 rounded-md bg-red-800 hover:bg-red-700 cursor-pointer">
                         Logout
                     </button>
                 </div>
             </header>
 
-            <main className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
-                <section className="md:col-span-1 bg-white/5 rounded-lg p-6 flex flex-col items-center gap-4">
+            <main className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <section className="min-w-0 lg:col-span-1 bg-white/5 rounded-lg p-6 flex flex-col items-center gap-4">
                     <h2 className="text-xl font-semibold">Account</h2>
 
                     <div className="flex flex-col items-center gap-3 w-full">
@@ -226,8 +226,8 @@ function ProfileContent() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex items-center justify-between">
-                                    <p className="text-lg">{authProfile?.username || '—'}</p>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="min-w-0 break-words text-lg">{authProfile?.username || '—'}</p>
                                     <button onClick={() => { setNewUsername(authProfile?.username || ''); setIsEditingUsername(true); }} className="text-sm text-green-400 hover:underline cursor-pointer">
                                         Change
                                     </button>
@@ -237,7 +237,7 @@ function ProfileContent() {
 
                         <div className="w-full mt-2">
                             <p className="block mb-1 text-sm text-gray-400">Email</p>
-                            <p className="text-lg text-gray-300">{userEmail ?? '—'}</p>
+                            <p className="break-all text-lg text-gray-300">{userEmail ?? '—'}</p>
                         </div>
 
                         <hr className="my-3 border-white/6 w-full" />
@@ -245,13 +245,13 @@ function ProfileContent() {
                         <div className="w-full">
                             <h3 className="text-lg font-medium mb-2">Security</h3>
                             <div className="text-sm mb-2">Reset Password</div>
-                            <button onClick={handlePasswordReset} className="w-full p-2 rounded-md bg-yellow-500 hover:bg-yellow-400 cursor-pointer">
+                            <button onClick={handlePasswordReset} className="w-full p-2 rounded-md bg-yellow-500 text-black hover:bg-yellow-400 cursor-pointer">
                                 Send Reset Email
                             </button>
                         </div>
                     </div>
                 </section>
-                <div><SoloSaveStatus /><ProfileStats stats={stats} loading={fetchingData} error={error} onRetry={() => setRetry(value => value + 1)} /></div>
+                <div className="min-w-0 lg:col-span-2"><SoloSaveStatus /><ProfileStats stats={stats} loading={fetchingData} error={error} onRetry={() => setRetry(value => value + 1)} /></div>
             </main>
         </div>
     );

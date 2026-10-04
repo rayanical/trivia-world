@@ -97,7 +97,7 @@ export default function WelcomePage() {
     };
 
     return (
-        <div className="relative flex min-h-screen w-full flex-col bg-[#101710]">
+        <div className="relative flex min-h-svh w-full flex-col bg-[#101710]">
             <div className="absolute top-4 right-4">
                 {user ? (
                     <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
@@ -109,33 +109,33 @@ export default function WelcomePage() {
                     </button>
                 )}
             </div>
-            <main className="flex flex-1 flex-col items-center justify-center p-4 sm:p-8 md:py-16">
+            <main className="flex flex-1 flex-col items-center justify-center px-4 pb-8 pt-20 sm:px-8 sm:pb-12 sm:pt-20">
                 <div className="flex flex-col items-center w-full max-w-2xl text-center">
                     <h1 className="text-white text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tighter">Trivia World</h1>
                     <p className="text-white/80 text-md sm:text-lg max-w-2xl my-8">The ultimate trivia challenge. Choose your way to play.</p>
 
-                    <div className="w-full max-w-md min-h-[5rem] mb-8 flex items-center justify-center">
+                    <div className="w-full max-w-md min-h-[5rem] mb-8 flex flex-col items-center justify-center">
                         {user ? (
                             <div className="flex items-center gap-4 w-full p-3 rounded-md bg-white/5 border border-white/20">
                                 {profile?.avatar_url ? (
-                                    <div className="relative w-12 h-12 rounded-full overflow-hidden">
+                                    <div className="relative w-12 h-12 shrink-0 rounded-full overflow-hidden">
                                         <Image src={profile.avatar_url} alt="User Avatar" fill sizes="80px" style={{ objectFit: 'cover' }} />
                                     </div>
                                 ) : (
-                                    <div className="w-12 h-12 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">
+                                    <div className="w-12 h-12 shrink-0 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">
                                         {resolvePlayerName().charAt(0).toUpperCase()}
                                     </div>
                                 )}
-                                <div>
+                                <div className="min-w-0 text-left">
                                     <p className="text-sm text-white/60">Playing as</p>
-                                    <p className="text-lg font-bold text-white">{resolvePlayerName()}</p>
+                                    <p className="text-lg font-bold text-white break-words">{resolvePlayerName()}</p>
                                 </div>
                             </div>
                         ) : (
                             <><label htmlFor="player-name" className="block mb-2 text-sm text-white/70">Your name (optional)</label><input
                                 id="player-name" autoComplete="nickname"
                                 className="w-full h-14 px-6 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 text-center text-lg focus:ring-2 focus:ring-primary"
-                                placeholder="Enter Your Name (Optional)"
+                                placeholder="Enter your name"
                                 type="text"
                                 maxLength={15}
                                 value={name}
@@ -149,7 +149,7 @@ export default function WelcomePage() {
                             onClick={handlePlaySolo}
                             onPointerEnter={prepareSolo}
                             onFocus={prepareSolo}
-                            className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
+                            className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-3 sm:px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <Icon name="person" />
                             <span className="truncate">Play Solo</span>
@@ -160,7 +160,7 @@ export default function WelcomePage() {
                             onPointerEnter={preloadMultiplayer}
                             onFocus={preloadMultiplayer}
                             disabled={pendingLobby !== null}
-                            className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
+                            className="w-full flex items-center justify-center rounded-md h-12 text-lg sm:h-14 sm:text-xl px-3 sm:px-8 bg-green-800 hover:bg-green-900 text-white font-bold gap-3 cursor-pointer"
                         >
                             <Icon name="groups" />
                             <span className="truncate">Create Multiplayer Game</span>
@@ -179,7 +179,7 @@ export default function WelcomePage() {
                         <input
                             id="join-code" autoComplete="off" maxLength={5}
                             className="w-full h-14 pl-6 pr-32 rounded-md bg-white/5 border border-white/20 text-white placeholder-white/60 focus:ring-2 focus:ring-primary"
-                            placeholder="Enter Game Code to Join"
+                            placeholder="Game code"
                             type="text"
                             value={gameCode}
                             onChange={(e) => setGameCode(e.target.value.toUpperCase())}

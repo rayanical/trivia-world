@@ -6,12 +6,11 @@ import type { useLobbyGame } from '@/hooks/useLobbyGame';
 type LobbyViewProps = Pick<ReturnType<typeof useLobbyGame>, 'gameCode' | 'players' | 'multiplayerConnected' | 'category' | 'setCategory' | 'difficulty' | 'setDifficulty' | 'amount' | 'setAmount' | 'isTimeLimitEnabled' | 'setIsTimeLimitEnabled' | 'timeLimit' | 'setTimeLimit' | 'starting' | 'maxPlayers' | 'isHost' | 'handleStart' | 'handleLeave' | 'setReady' | 'roomError'> & { connectionMessage?: string | null; retryConnection?: () => void; retryLabel?: string };
 export default function LobbySetup({ gameCode, players, multiplayerConnected, category, setCategory, difficulty, setDifficulty, amount, setAmount, isTimeLimitEnabled, setIsTimeLimitEnabled, timeLimit, setTimeLimit, starting, maxPlayers, isHost, handleStart, handleLeave, connectionMessage, retryConnection, retryLabel = 'Retry Connection', setReady, roomError }: LobbyViewProps) {
 return (
-                <div className="w-full max-w-7xl flex flex-col lg:flex-row items-stretch lg:items-center justify-start lg:justify-center gap-6 lg:gap-8 pt-4 lg:pt-0 lg:p-8">
-                    <div className="hidden lg:block w-64 flex-shrink-0" />
+                <div className="w-full max-w-4xl flex flex-col items-center lg:grid lg:grid-cols-[minmax(0,28rem)_18rem] lg:items-start lg:justify-center gap-6 lg:gap-8">
 
                     {/* Centered setup */}
-                    <div className="w-full max-w-md space-y-4 sm:space-y-6 flex-shrink-0 order-1 lg:order-none">
-                        <h1 className="text-4xl font-bold mb-2 text-center">Multiplayer Lobby</h1>
+                    <div className="w-full max-w-md min-w-0 space-y-4 sm:space-y-6 flex-shrink-0 order-1 lg:order-none">
+                        <h1 className="text-3xl sm:text-4xl font-bold mb-2 text-center">Multiplayer Lobby</h1>
                         <p className="text-center text-lg">Game Code: <span className="inline-block w-[5ch] font-mono font-bold" aria-busy={!gameCode}>{gameCode || '·····'}</span></p>
                         <p className="text-lg mb-4 text-center">
                             Players ({players.length}/{maxPlayers})
@@ -35,7 +34,7 @@ return (
                                         Start Game
                                     </button>
                                 </div>
-                                <div className="h-20 text-sm text-white/60" aria-live="polite">
+                                <div className="min-h-20 text-sm text-white/60" aria-live="polite">
                                     {starting ? <p>Preparing the questions. Your settings are unchanged.</p> : connectionMessage && <p>{connectionMessage}</p>}
                                     {retryConnection && <button onClick={retryConnection} className="mt-2 text-green-400 underline cursor-pointer">{retryLabel}</button>}
                                 </div>

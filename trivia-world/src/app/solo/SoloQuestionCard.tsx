@@ -12,7 +12,7 @@ type Props = { question: SoloQuestion; questionNumber: number; selectedAnswer: s
 export default function SoloQuestionCard({ question, questionNumber, selectedAnswer, isAnswered, isSubmitting, submitAnswer, nextQuestion }: Props) {
 return (
 <div className="flex flex-col gap-6 rounded-xl bg-[#253325] p-4 sm:p-6 shadow-lg">
-                                <div className="flex justify-between text-gray-400">
+                                <div className="flex flex-wrap justify-between gap-x-4 gap-y-2 text-xs sm:text-base text-gray-400">
                                     <span>Question {questionNumber}</span>
                                     <span className="capitalize">Category: {formatCategory(question.category)}</span>
                                     <span className="capitalize">
@@ -26,7 +26,7 @@ return (
                                         </span>
                                     </span>
                                 </div>
-                                <h2 className="text-center text-lg sm:text-xl md:text-2xl font-bold text-white">{question.question}</h2>
+                                <h2 className="break-words text-center text-lg sm:text-xl md:text-2xl font-bold text-white">{question.question}</h2>
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     {question.all_answers.map((answer) => (
                                         <button
@@ -37,7 +37,7 @@ return (
                                             }`}
                                             disabled={isAnswered || isSubmitting}
                                         >
-                                            <span className="text-base font-medium text-white">{answer}</span>
+                                            <span className="min-w-0 break-words text-base font-medium text-white">{answer}</span>
                                         </button>
                                     ))}
                                 </div>

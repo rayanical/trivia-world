@@ -9,7 +9,7 @@ export default function AuthForm({ isOpen, onClose }: { isOpen: boolean; onClose
     const credentialsMissing = !isResetting && (!password || (isSignup && username.trim().length < 3));
     const disabled = loading || !email || credentialsMissing;
     return (
-            <form action={handleAuth} className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-8 rounded-xl shadow-2xl border border-green-900/30 w-full max-w-md max-h-full overflow-y-auto">
+            <form action={handleAuth} className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-5 sm:p-8 rounded-xl shadow-2xl border border-green-900/30 w-full max-w-md max-h-full overflow-y-auto overscroll-contain">
                 <h2 id="auth-title" className="text-3xl font-bold text-green-400 mb-6 text-center">{title}</h2>
                 {error && <div role="alert" className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm">{error}</div>}
                 <AuthFields email={email} setEmail={setEmail} password={password} setPassword={setPassword} username={username} setUsername={setUsername} isSignup={isSignup} isResetting={isResetting} />

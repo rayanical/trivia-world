@@ -86,7 +86,7 @@ export default function ResetPasswordPage() {
     return (
         <div className="relative flex min-h-screen w-full flex-col items-center justify-center bg-[#101710] p-4">
             <div className="w-full max-w-md">
-                <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-8 rounded-xl shadow-2xl border border-green-900/30">
+                <div className="bg-gradient-to-br from-[#104423] to-[#0a2f18] p-5 sm:p-8 rounded-xl shadow-2xl border border-green-900/30">
                     <h1 className="font-['Space_Grotesk',_sans-serif] text-3xl font-bold text-green-400 mb-6 text-center">Reset Your Password</h1>
 
                     {message && !error && <p className="text-center text-green-300 mb-4">{message}</p>}

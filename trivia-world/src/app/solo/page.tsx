@@ -62,7 +62,7 @@ function SoloGameContent() {
 
     return (
         <>
-            <div className="flex min-h-screen flex-col items-center justify-center bg-[#101710] p-4 text-white">
+            <div className="relative flex min-h-svh flex-col items-center justify-center bg-[#101710] px-4 pb-8 pt-20 sm:px-6 text-white">
                 <div className="absolute top-4 right-4">
                     {profile ? (
                         <button onClick={() => router.push('/profile')} className="bg-blue-800 hover:bg-blue-900 p-2 rounded-md text-white cursor-pointer transition-colors">
@@ -80,13 +80,13 @@ function SoloGameContent() {
                     <div ref={gameContainerRef} className="w-full max-w-4xl">
                         <div className="mb-4 flex items-center gap-3 text-lg font-semibold">
                             {playerAvatar ? (
-                                <div className="relative w-12 h-12 rounded-full overflow-hidden">
+                                <div className="relative w-12 h-12 shrink-0 rounded-full overflow-hidden">
                                     <Image src={playerAvatar} alt="Player Avatar" fill sizes="48px" style={{ objectFit: 'cover' }} />
                                 </div>
                             ) : (
-                                <div className="w-12 h-12 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">{playerName?.charAt(0).toUpperCase()}</div>
+                                <div className="w-12 h-12 shrink-0 rounded-full bg-green-800 flex items-center justify-center text-xl font-bold">{playerName?.charAt(0).toUpperCase()}</div>
                             )}
-                            <span>{playerName}</span>
+                            <span className="min-w-0 break-words">{playerName}</span>
                         </div>
                         <div className="mb-4 flex flex-wrap justify-between items-center gap-2 text-xl font-bold">
                             <button onClick={() => router.push('/')} className="text-sm bg-gray-700 hover:bg-gray-800 px-4 py-2 rounded-md flex items-center gap-2 cursor-pointer">

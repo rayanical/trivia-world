@@ -7,11 +7,13 @@ type LobbyViewProps = Pick<ReturnType<typeof useLobbyGame>, 'gameCode' | 'player
 export default function LobbyQuestion({ gameCode, players, currentQuestion, timeLeft, isRevealPhase, selectedAnswer, revealedAnswer, everyoneAnswered, handleSubmitAnswer, handleLeave }: LobbyViewProps) {
 return (
                 <div className="w-full max-w-4xl relative">
+                    <div className="min-h-12 mb-2" aria-live="polite">
                     {everyoneAnswered && (
-                        <div className="absolute -top-14 left-1/2 -translate-x-1/2 w-full max-w-md z-30 pointer-events-none">
+                        <div className="w-full max-w-md mx-auto pointer-events-none">
                             <div className="rounded-md bg-yellow-600/20 p-2 text-center text-yellow-200 backdrop-blur-sm">All players have answered</div>
                         </div>
                     )}
+                    </div>
 
                     <div className="mb-4 flex flex-col lg:flex-row flex-wrap justify-between items-center gap-2 text-xl font-bold">
                         <button
@@ -47,8 +49,8 @@ return (
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-start gap-4">
-                                    <h3 className="text-lg sm:text-xl font-bold max-w-3xl">{currentQuestion?.question}</h3>
-                                    <div className="text-center ml-4">
+                                    <h3 className="min-w-0 break-words text-lg sm:text-xl font-bold max-w-3xl">{currentQuestion?.question}</h3>
+                                    <div className="min-h-16 w-16 shrink-0 text-center">
                                         {(isRevealPhase || !!currentQuestion?.timeLimit) && (
                                             <>
                                                 <div className="text-sm text-gray-300">{isRevealPhase ? 'Next in' : 'Time Left'} </div>
@@ -61,7 +63,6 @@ return (
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* everyoneAnswered banner moved above the top bar to avoid resizing the question container */}
                             {(currentQuestion?.all_answers || []).map((ans: string) => {
                                 const isSelected = selectedAnswer === ans;
                                 const isRevealed = revealedAnswer !== null;
@@ -78,7 +79,7 @@ return (
                                     <button
                                         key={ans}
                                         onClick={() => handleSubmitAnswer(ans)}
-                                        className={`p-3 sm:p-4 rounded-lg text-left transition-colors ${buttonClass}`}
+                                        className={`min-w-0 break-words p-3 sm:p-4 rounded-lg text-left transition-colors ${buttonClass}`}
                                         disabled={isRevealPhase || (!!currentQuestion?.timeLimit && timeLeft <= 0)}
                                     >
                                         {ans}
@@ -99,15 +100,15 @@ return (
                                         <div key={p.id || p.name} className="bg-white/5 backdrop-blur-sm p-3 rounded-lg border border-white/10 flex items-center gap-3">
                                             <span className="font-bold text-lg w-6 text-center">{index + 1}</span>
                                             {p.avatar ? (
-                                                <div className="relative w-10 h-10 rounded-full overflow-hidden">
+                                                <div className="relative w-10 h-10 shrink-0 rounded-full overflow-hidden">
                                                     <Image src={p.avatar} alt={p.name} fill sizes="40px" style={{ objectFit: 'cover' }} />
                                                 </div>
                                             ) : (
-                                                <div className="w-10 h-10 rounded-full bg-green-800 flex items-center justify-center text-base font-bold">
+                                                <div className="w-10 h-10 shrink-0 rounded-full bg-green-800 flex items-center justify-center text-base font-bold">
                                                     {(p.name?.charAt(0) ?? '?').toUpperCase()}
                                                 </div>
                                             )}
-                                            <div className="flex-1">
+                                            <div className="min-w-0 flex-1">
                                                 <span className={`font-medium text-sm truncate block ${p.id === socket.id ? 'text-[#22c55e] font-bold' : ''}`}>{p.name}</span>
                                                 <span className="text-green-400 font-bold text-xs">{p.score || 0} pts</span>
                                             </div>

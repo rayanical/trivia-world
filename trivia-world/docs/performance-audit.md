@@ -207,3 +207,30 @@ Doctor remains 100/100 with zero diagnostics; build, lint and type checks pass.
 Render's free instance can still sleep. This audit improves UI behavior and
 client work; it does not remove infrastructure cold starts or guarantee the
 absence of every bug.
+
+## Responsive layout follow-up (2026-10-04)
+
+Fixed solo setup/summary clipping on short viewports by allowing content to grow
+and scroll, while reserving space for the account toolbar. Solo difficulty uses
+two columns on phones. Home labels now sit above their inputs, and compact
+button padding/placeholder text fits narrow widths. Question metadata wraps,
+long answer text can break, and avatars retain their size beside long names.
+
+Removed the lobby's empty desktop spacer and fixed-width column combination
+that could exceed tablet widths. The setup and invite panels now use a bounded
+two-column grid on desktop and centered stacked panels on phones. Answer
+completion feedback has reserved space in normal flow to avoid toolbar overlap.
+The profile statistics wrapper now spans both intended desktop columns; its
+tabs wrap and account emails can break within the card. Auth/reset forms use
+smaller phone padding and retain their scrollable dialog behavior.
+
+Browser validation used actual iframe viewports at 320×568, 390×844, 844×390,
+and 1024×768. Verified no horizontal overflow on home, solo setup/summary,
+multiplayer setup/results, and authenticated profile at the checked sizes.
+Exercised solo answer → next question → summary, multiplayer start → answer
+→ results → leave, phone profile tabs, and landscape signup dialog scrolling.
+The disposable local database and deterministic trivia fixture were used;
+these are functional/layout checks, not real-device keyboard or performance
+benchmarks. Existing regression suite: 31 tests, 123 assertions passed; lint
+and TypeScript passed. Production build passed; full React Doctor scan remained
+100/100 with zero diagnostics.
