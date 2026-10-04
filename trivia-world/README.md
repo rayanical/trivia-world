@@ -23,6 +23,9 @@ subsequent starts preserve existing data. To apply them separately:
 bun --env-file=.env.local run db:migrate
 ```
 
+Migrations automatically use Neon's direct endpoint so the migration lock remains
+on one database session. An optional `DATABASE_URL_UNPOOLED` overrides that endpoint.
+
 ## Deployment
 
 The frontend is hosted on Vercel and the backend on Render. The frontend proxies

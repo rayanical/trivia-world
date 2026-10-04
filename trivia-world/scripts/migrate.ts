@@ -1,7 +1,14 @@
 import { getMigrations } from 'better-auth/db/migration';
-import { auth } from '../src/server/auth';
-import { db } from '../src/server/db';
 import { createHash } from 'node:crypto';
+import { requiredEnv } from '../src/server/config';
+
+// Session-level migration locks need a direct connection, not transaction pooling.
+const migrationUrl = new URL(process.env.DATABASE_URL_UNPOOLED || requiredEnv('DATABASE_URL'));
+if (migrationUrl.hostname.endsWith('.neon.tech')) {
+    migrationUrl.hostname = migrationUrl.hostname.replace('-pooler.', '.');
+}
+process.env.DATABASE_URL = migrationUrl.toString();
+const [{ auth }, { db }] = await Promise.all([import('../src/server/auth'), import('../src/server/db')]);
 
 const client = await db.connect();
 try {
