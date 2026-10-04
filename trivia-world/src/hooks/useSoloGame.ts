@@ -22,8 +22,11 @@ export function useSoloGame(category: string, difficulty: string) {
     const [score, setScore] = useState(0);
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [isAnswered, setIsAnswered] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    // The pending task owns its indicator; a stale completion cannot clear a newer task.
+    const [questionTask, setQuestionTask] = useState<AbortController | null>(null);
+    const [answerTask, setAnswerTask] = useState<AbortController | null>(null);
+    const isLoading = questionTask !== null;
+    const isSubmitting = answerTask !== null;
     const questionRequest = useRef<AbortController | null>(null);
     const answerRequest = useRef<AbortController | null>(null);
     const answeredId = useRef<string | null>(null);
@@ -42,7 +45,7 @@ export function useSoloGame(category: string, difficulty: string) {
         if (questionRequest.current) return;
         const controller = new AbortController();
         questionRequest.current = controller;
-        setIsLoading(true);
+        setQuestionTask(controller);
         try {
             const data = await api<SoloQuestion[]>('/solo/questions', { ...jsonBody({ category: category || undefined, difficulty: difficulty || undefined }), signal: controller.signal });
             if (!controller.signal.aborted) setQuestions(previous => [...previous, ...data]);
@@ -51,8 +54,8 @@ export function useSoloGame(category: string, difficulty: string) {
         } finally {
             if (questionRequest.current === controller) {
                 questionRequest.current = null;
-                setIsLoading(false);
             }
+            setQuestionTask(task => task === controller ? null : task);
         }
     }, [category, difficulty, showAlert]);
 
@@ -66,7 +69,7 @@ export function useSoloGame(category: string, difficulty: string) {
         setScore(0);
         setSelectedAnswer(null);
         setIsAnswered(false);
-        setIsSubmitting(false);
+        setAnswerTask(null);
         setPhase('playing');
         void fetchQuestions();
     };
@@ -87,7 +90,7 @@ export function useSoloGame(category: string, difficulty: string) {
         const controller = new AbortController();
         answerRequest.current = controller;
         setSelectedAnswer(answer);
-        setIsSubmitting(true);
+        setAnswerTask(controller);
         try {
             const result = await api<{ correct: boolean; correctAnswer: string }>('/solo/answer', { ...jsonBody({ id: currentQuestion.id, token: currentQuestion.token, answer }), signal: controller.signal });
             if (controller.signal.aborted) return;
@@ -103,12 +106,12 @@ export function useSoloGame(category: string, difficulty: string) {
         } finally {
             if (answerRequest.current === controller) {
                 answerRequest.current = null;
-                setIsSubmitting(false);
             }
+            setAnswerTask(task => task === controller ? null : task);
         }
     };
 
-    const endGame = () => { active.current = false; cancelRequests(); setIsLoading(false); setIsSubmitting(false); setPhase('ended'); };
+    const endGame = () => { active.current = false; cancelRequests(); setQuestionTask(null); setAnswerTask(null); setPhase('ended'); };
     const resetGame = () => { active.current = false; cancelRequests(); setPhase('setup'); };
     return { currentQuestion, questionNumber, score, selectedAnswer, isAnswered, isLoading, isSubmitting, gameStarted: phase !== 'setup', isGameOver: phase === 'ended', fetchQuestions, startGame, nextQuestion, submitAnswer, endGame, resetGame };
 }

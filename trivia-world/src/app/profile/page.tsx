@@ -42,20 +42,23 @@ function ProfileContent() {
     useEffect(() => {
         if (!userId) return;
         const controller = new AbortController();
-        const fetchData = async () => {
-            setFetchingData(true);
-            setError(null);
-            try {
-                const data = await api<UserStats>('/stats', { signal: controller.signal });
-                if (!controller.signal.aborted) setStats(data);
-            } catch (err) {
-                if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Failed to load statistics.');
-            } finally {
-                if (!controller.signal.aborted) setFetchingData(false);
-            }
-        };
-        void fetchData();
-        return () => controller.abort();
+        let ignore = false;
+        setFetchingData(true);
+        setError(null);
+        api<UserStats>('/stats', { signal: controller.signal })
+            .then(data => {
+                if (ignore) return;
+                setStats(data);
+            })
+            .catch(err => {
+                if (ignore) return;
+                setError(err instanceof Error ? err.message : 'Failed to load statistics.');
+            })
+            .finally(() => {
+                if (ignore) return;
+                setFetchingData(false);
+            });
+        return () => { ignore = true; controller.abort(); };
     }, [userId, retry]);
 
     /**

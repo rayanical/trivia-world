@@ -11,13 +11,13 @@ audit is checked separately. No new diagnostic suppressions were added.
 
 | Measurement | Before | After |
 | --- | ---: | ---: |
-| React Doctor score | 41/100 | 73/100 |
+| React Doctor score | 41/100 | 100/100 |
 | Errors | 3 | 0 |
-| Warnings | 55 | 8 |
+| Warnings | 55 | 0 |
 | Homepage first-load JavaScript | 152 KB | 139 KB |
 | Solo first-load JavaScript | 153 KB | 141 KB |
 | Profile first-load JavaScript | 152 KB | 139 KB |
-| Multiplayer first-load JavaScript | 156 KB | 156 KB |
+| Multiplayer first-load JavaScript | 156 KB | 157 KB |
 
 JavaScript sizes are Next.js production-build estimates, not measured network
 latency or frame rates. The multiplayer code moved out of the shared initial
@@ -64,18 +64,34 @@ bundle and still loads when multiplayer is entered.
 - Real-browser multiplayer checks covered deferred connection setup, invalid
   settings feedback, clicking the timer switch, scoring, and reveal behavior.
 
-## Remaining diagnostics
+## React Doctor 100 follow-up
 
-Four warnings concern complexity: authentication, solo rendering, and the large
-multiplayer component (both size and complexity). Smaller setup and profile
-statistics components were extracted, but rewriting the complete multiplayer
-state machine solely to improve a score is outside this focused change.
+The full default-rule scan now reports **100/100, zero errors, and zero warnings**
+across 55 analyzed files (React Doctor 0.9.14). No rule exclusions, inline
+suppressions, or scan-scope reductions were added. The same `--no-supply-chain`
+setting used for the baseline is retained; this score covers React Doctor's
+code analysis, not its external dependency service.
 
-Four warnings concern asynchronous cleanup. They were reviewed: the profile
-request owns an AbortController, aborts in effect cleanup, and gates state writes
-on its signal. Its loading reset is in `finally`. Solo loading/submission resets
-are also in `finally`, guarded by request identity so an obsolete request cannot
-clear a newer request's busy state. No suppressions hide these diagnostics.
+- Extracted lobby joining, setup, questions, and results into separate views,
+  with narrow typed props. The existing socket lifecycle remains in one
+  controller hook so state and timers retain their original ownership.
+- Separated the authentication dialog, fields, form, and auth request handling.
+  React 19's form-action API retains native validation and Enter submission.
+- Extracted solo question and results views without changing scoring or replay.
+- Solo busy indicators now derive from the pending request identity. Finalizers
+  release only their own task, preserving the guard against stale completions.
+- Profile requests explicitly mark effect cleanup as ignored and abort the
+  request. Success, failure, and finalization all respect that lifecycle.
+
+The UI is easier to maintain, but component extraction adds approximately 1 KB
+of multiplayer first-load JavaScript in the build estimate. It does not claim a
+runtime speed improvement on its own.
+
+Verification: the production build and ESLint pass; all 18 regression tests /
+74 assertions pass. Browser checks confirm Enter submits the auth form, failed
+sign-in restores the submit control, reset mode returns to sign-in, Escape
+restores focus, solo scoring/replay works, and multiplayer setup/scoring/results
+work against a disposable local backend.
 
 ## Follow-up priorities
 
@@ -85,7 +101,7 @@ clear a newer request's busy state. No suppressions hide these diagnostics.
 3. Design question caching around freshness and repeat avoidance. Keep answer
    scoring and ownership server-side; never cache sessions or personal stats
    publicly.
-4. Isolate countdown rendering and extract the multiplayer state model before
+4. Isolate countdown rendering and simplify the multiplayer state model before
    adding new game modes or AI-generated questions.
 5. Measure real interaction latency on a production mobile connection before
    adding broad memoization or additional caching libraries.
