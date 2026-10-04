@@ -3,15 +3,16 @@ import Image from 'next/image';
 import LobbySettings from '@/app/components/LobbySettings';
 import { socket } from '@/lib/socket';
 import type { useLobbyGame } from '@/hooks/useLobbyGame';
-type LobbyViewProps = Pick<ReturnType<typeof useLobbyGame>, 'gameCode' | 'players' | 'multiplayerConnected' | 'category' | 'setCategory' | 'difficulty' | 'setDifficulty' | 'amount' | 'setAmount' | 'isTimeLimitEnabled' | 'setIsTimeLimitEnabled' | 'timeLimit' | 'setTimeLimit' | 'starting' | 'maxPlayers' | 'isHost' | 'handleStart' | 'handleLeave'>;
-export default function LobbySetup({ gameCode, players, multiplayerConnected, category, setCategory, difficulty, setDifficulty, amount, setAmount, isTimeLimitEnabled, setIsTimeLimitEnabled, timeLimit, setTimeLimit, starting, maxPlayers, isHost, handleStart, handleLeave }: LobbyViewProps) {
+type LobbyViewProps = Pick<ReturnType<typeof useLobbyGame>, 'gameCode' | 'players' | 'multiplayerConnected' | 'category' | 'setCategory' | 'difficulty' | 'setDifficulty' | 'amount' | 'setAmount' | 'isTimeLimitEnabled' | 'setIsTimeLimitEnabled' | 'timeLimit' | 'setTimeLimit' | 'starting' | 'maxPlayers' | 'isHost' | 'handleStart' | 'handleLeave'> & { connectionMessage?: string | null; retryConnection?: () => void };
+export default function LobbySetup({ gameCode, players, multiplayerConnected, category, setCategory, difficulty, setDifficulty, amount, setAmount, isTimeLimitEnabled, setIsTimeLimitEnabled, timeLimit, setTimeLimit, starting, maxPlayers, isHost, handleStart, handleLeave, connectionMessage, retryConnection }: LobbyViewProps) {
 return (
                 <div className="w-full max-w-7xl flex flex-col lg:flex-row items-stretch lg:items-center justify-start lg:justify-center gap-6 lg:gap-8 pt-4 lg:pt-0 lg:p-8">
                     <div className="hidden lg:block w-64 flex-shrink-0" />
 
                     {/* Centered setup */}
                     <div className="w-full max-w-md space-y-4 sm:space-y-6 flex-shrink-0 order-1 lg:order-none">
-                        <h1 className="text-4xl font-bold mb-2 text-center">Game Code: {gameCode}</h1>
+                        <h1 className="text-4xl font-bold mb-2 text-center">Multiplayer Lobby</h1>
+                        <p className="text-center text-lg">Game Code: <span className="inline-block w-[5ch] font-mono font-bold" aria-busy={!gameCode}>{gameCode || '·····'}</span></p>
                         <p className="text-lg mb-4 text-center">
                             Players ({players.length}/{maxPlayers})
                         </p>
@@ -28,11 +29,15 @@ return (
                                     </button>
                                     <button
                                         onClick={handleStart}
-                                        disabled={starting || !multiplayerConnected}
+                                        disabled={!gameCode || starting || !multiplayerConnected}
                                         className="flex-1 h-12 sm:h-14 rounded-md bg-green-800 text-base sm:text-xl font-bold hover:bg-green-900 cursor-pointer"
                                     >
-                                        {starting ? 'Loading questions…' : 'Start Game'}
+                                        Start Game
                                     </button>
+                                </div>
+                                <div className="h-20 text-sm text-white/60" aria-live="polite">
+                                    {starting ? <p>Preparing the questions. Your settings are unchanged.</p> : connectionMessage && <p>{connectionMessage}</p>}
+                                    {retryConnection && <button onClick={retryConnection} className="mt-2 text-green-400 underline cursor-pointer">Retry Connection</button>}
                                 </div>
                             </div>
                         ) : (
@@ -53,7 +58,7 @@ return (
                                 <ul className="space-y-2">
                                     {players.map((p) => (
                                         <li
-                                            key={p.id || p.name}
+                                            key={p.id === socket.id || p.id === 'local-player' ? 'self' : p.id || p.name}
                                             className="bg-white/5 backdrop-blur-sm p-2.5 rounded-lg font-medium text-sm border border-white/10 flex items-center justify-center gap-3"
                                         >
                                             {p.avatar ? (
@@ -62,10 +67,10 @@ return (
                                                 </div>
                                             ) : (
                                                 <div className="w-6 h-6 rounded-full bg-green-800 flex items-center justify-center text-xs font-bold">
-                                                    {(p.name?.charAt(0) ?? '?').toUpperCase()}
+                                                    {p.id === socket.id || p.id === 'local-player' ? 'Y' : (p.name?.charAt(0) ?? '?').toUpperCase()}
                                                 </div>
                                             )}
-                                            <span className={p.id === socket.id ? 'text-[#22c55e] font-bold' : ''}>{p.name}</span>
+                                            <span className={p.id === socket.id || p.id === 'local-player' ? 'text-[#22c55e] font-bold' : ''}>{p.id === socket.id || p.id === 'local-player' ? 'You' : p.name}</span>
                                         </li>
                                     ))}
                                 </ul>

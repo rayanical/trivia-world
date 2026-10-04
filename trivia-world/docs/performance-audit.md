@@ -113,9 +113,9 @@ feedback; it does not make competitive multiplayer client-scored.
   and a ten-minute lifetime, sharing concurrent refill work. Issued entries are
   removed from the pool; upstream providers can still repeat question text.
 - Homepage multiplayer connections start quietly after the session is ready.
-  The create button opens a local settings screen immediately while room creation
-  finishes. Draft settings carry into the real room; a code is shown only after
-  server confirmation. Slow connection feedback starts after 400 ms.
+  The create button opens the final lobby immediately while room creation
+  finishes. The same controls remain mounted; a code is shown only after server
+  confirmation. Slow connection feedback starts after 400 ms in reserved space.
 - Room replies have request identities. Cancelled late replies leave the room,
   rather than resolving a newer entry request or stranding a player in a lobby.
 - Profile statistics refresh when the background answer backlog finishes.
@@ -132,9 +132,24 @@ left category/difficulty/count editable and preserved those settings in the real
 lobby. This is functional evidence, not a claim of a measured 285 ms paint time.
 
 The latest production build estimates are 141 KB for home/profile, 143 KB for
-solo, 158 KB for lobby, and 135 KB for the new multiplayer setup route. The small
-bundle increase buys independent background saving and immediate local feedback.
+solo, 159 KB for lobby, and 160 KB for multiplayer. Multiplayer now loads the
+shared gameplay view once instead of loading setup and then a second route.
 Hosting remains unchanged and room persistence is deferred as requested.
+
+## Single-click multiplayer stability
+
+Room creation now uses the same shared lobby view before and after confirmation.
+It updates the room code and resumable URL in place, without redirecting to a
+second page. Settings, focus, heading, player row, and button labels stay stable;
+connection and question preparation messages have reserved space. Start remains
+disabled until a confirmed room and connection are available. Shared join links
+still use `/lobby/CODE`; the creator can reload `/multiplayer?room=CODE`.
+
+Browser verification with room creation delayed five seconds: the question-count
+input retained value `3`, focus, and identical coordinates (400, 340) across the
+reply. The creator route stayed mounted. Reload recovered the room, and starting,
+answering, and finishing a one-question game worked. Full React Doctor remains
+100/100 with zero diagnostics.
 
 ## Follow-up priorities
 

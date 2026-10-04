@@ -19,10 +19,10 @@ type Question = {
     endTime?: number | null;
 };
 
-export function useLobbyGame() {
+export function useLobbyGame(overrideCode?: string, creator = false) {
     const params = useParams();
     const router = useRouter();
-    const gameCode = typeof params.gameCode === 'string' ? params.gameCode : '';
+    const gameCode = overrideCode ?? (typeof params.gameCode === 'string' ? params.gameCode : '');
     const [players, setPlayers] = useState<PlayerView[]>([]);
     const [joined, setJoined] = useState(false);
     const [guestName, setGuestName] = useState('');
@@ -44,19 +44,6 @@ export function useLobbyGame() {
     const [amount, setAmount] = useState('10');
     const [isTimeLimitEnabled, setIsTimeLimitEnabled] = useState<boolean>(true);
     const [timeLimit, setTimeLimit] = useState('15');
-    useEffect(() => {
-        try {
-            const raw = sessionStorage.getItem(`lobbyDraft:${gameCode}`);
-            if (!raw) return;
-            sessionStorage.removeItem(`lobbyDraft:${gameCode}`);
-            const draft = JSON.parse(raw);
-            if (typeof draft.category === 'string') setCategory(draft.category);
-            if (typeof draft.difficulty === 'string') setDifficulty(draft.difficulty);
-            if (typeof draft.amount === 'string') setAmount(draft.amount);
-            if (typeof draft.timeLimit === 'string') setTimeLimit(draft.timeLimit);
-            if (typeof draft.isTimeLimitEnabled === 'boolean') setIsTimeLimitEnabled(draft.isTimeLimitEnabled);
-        } catch { /* A corrupt draft must not prevent joining a room. */ }
-    }, [gameCode]);
     const [inGame, setInGame] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
     const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -117,12 +104,13 @@ export function useLobbyGame() {
     }, [gameCode, profile, guestName, requireServer, showAlert]);
 
     useEffect(() => {
+        if (creator || !gameCode) return;
         if (!multiplayerConnected) { autoJoinAttempted.current = false; return; }
         if (user && !joined && !autoJoinAttempted.current) {
             autoJoinAttempted.current = true;
             void joinLobby();
         }
-    }, [multiplayerConnected, user, joined, joinLobby]);
+    }, [creator, gameCode, multiplayerConnected, user, joined, joinLobby]);
 
     useEffect(() => {
         const onUpdate = (list: PlayerView[]) => {
@@ -271,7 +259,7 @@ export function useLobbyGame() {
             if (!joinRequest.current) showAlert(message, 'error');
         };
         const onStarted = () => setStarting(false);
-        const onConnectionError = (error: Error) => showAlert(error.message, 'error');
+        const onConnectionError = (error: Error) => { if (gameCode) showAlert(error.message, 'error'); };
         socket.on('start-error', onError);
         socket.on('join-error', onJoinError);
         socket.on('game-started', onStarted);
@@ -353,7 +341,7 @@ export function useLobbyGame() {
         };
     }, [currentQuestion?.endTime, gameCode, isRevealPhase]);
 
-    const isHost = players.length > 0 && players[0].id === socket.id;
+    const isHost = (creator && players.length === 0) || (players.length > 0 && players[0].id === socket.id);
 
     /**
      * Emits a request to start the game when the host finalizes lobby settings.

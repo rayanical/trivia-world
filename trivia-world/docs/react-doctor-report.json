@@ -70,7 +70,7 @@
         "hasShadcnUi": false,
         "isPreES2023Target": true,
         "isStaticExport": false,
-        "sourceFileCount": 65
+        "sourceFileCount": 66
       },
       "diagnostics": [],
       "score": {
@@ -94,6 +94,7 @@
         "src/app/components/Footer.tsx",
         "src/app/components/Icon.tsx",
         "src/app/components/LobbySettings.tsx",
+        "src/app/components/LobbyView.tsx",
         "src/app/components/PasswordValidator.tsx",
         "src/app/components/SoloSaveStatus.tsx",
         "src/app/components/Spinner.tsx",
@@ -146,10 +147,10 @@
         "tests/question-pool.test.ts",
         "tests/solo-buffer.test.ts"
       ],
-      "analyzedFileCount": 65,
+      "analyzedFileCount": 66,
       "complete": true,
-      "scannedFileCount": 65,
-      "elapsedMilliseconds": 1419.283875
+      "scannedFileCount": 66,
+      "elapsedMilliseconds": 1215.251083
     }
   ],
   "diagnostics": [],
@@ -161,6 +162,6 @@
     "score": 100,
     "scoreLabel": "Great"
   },
-  "elapsedMilliseconds": 1531.2262090000002,
+  "elapsedMilliseconds": 1312.341,
   "error": null
 }
