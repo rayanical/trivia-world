@@ -2,10 +2,10 @@
 import dynamic from 'next/dynamic';
 import type { useLobbyGame } from '@/hooks/useLobbyGame';
 const AuthModal = dynamic(() => import('@/app/components/AuthModal'), { ssr: false });
-type LobbyViewProps = Pick<ReturnType<typeof useLobbyGame>, 'router' | 'gameCode' | 'guestName' | 'setGuestName' | 'joining' | 'isAuthModalOpen' | 'setIsAuthModalOpen' | 'profile' | 'joinLobby'>;
-export default function LobbyJoin({ router, gameCode, guestName, setGuestName, joining, isAuthModalOpen, setIsAuthModalOpen, profile, joinLobby }: LobbyViewProps) {
+type LobbyViewProps = Pick<ReturnType<typeof useLobbyGame>, 'router' | 'gameCode' | 'guestName' | 'setGuestName' | 'joining' | 'isAuthModalOpen' | 'setIsAuthModalOpen' | 'profile' | 'joinLobby' | 'roomError'>;
+export default function LobbyJoin({ router, gameCode, guestName, setGuestName, joining, isAuthModalOpen, setIsAuthModalOpen, profile, joinLobby, roomError }: LobbyViewProps) {
         return (
-            <div className="flex h-screen flex-col items-center justify-center bg-[#101710] text-white p-4">
+            <div className="flex min-h-screen flex-col items-center justify-center bg-[#101710] text-white p-4">
                 <div className="w-full max-w-md space-y-6">
                     <h1 className="text-4xl font-bold text-center">Join Lobby</h1>
                     <p className="text-center text-white/80">
@@ -21,13 +21,14 @@ export default function LobbyJoin({ router, gameCode, guestName, setGuestName, j
                         maxLength={15}
                         value={guestName}
                         onChange={(e) => setGuestName(e.target.value)}
-                        onKeyPress={(e) => {
+                        onKeyDown={(e) => {
                             if (e.key === 'Enter' && guestName.trim()) {
                                 void joinLobby();
                             }
                         }}
                     />
 
+                    <div className="min-h-12 text-sm text-yellow-200" role="status">{roomError}</div>
                     <button
                         onClick={() => void joinLobby()}
                         disabled={joining || (!profile?.username && !guestName.trim())}

@@ -132,7 +132,7 @@ left category/difficulty/count editable and preserved those settings in the real
 lobby. This is functional evidence, not a claim of a measured 285 ms paint time.
 
 The latest production build estimates are 141 KB for home/profile, 143 KB for
-solo, 159 KB for lobby, and 160 KB for multiplayer. Multiplayer now loads the
+solo, 160 KB for lobby, and 161 KB for multiplayer. Multiplayer now loads the
 shared gameplay view once instead of loading setup and then a second route.
 Hosting remains unchanged and room persistence is deferred as requested.
 
@@ -150,6 +150,46 @@ input retained value `3`, focus, and identical coordinates (400, 340) across the
 reply. The creator route stayed mounted. Reload recovered the room, and starting,
 answering, and finishing a one-question game worked. Full React Doctor remains
 100/100 with zero diagnostics.
+
+## Feature readiness and multiplayer polish (2026-10-04)
+
+- Reconnecting a player now broadcasts the restored connection to the other
+  players. Non-member recovery requests return an explicit error instead of
+  silently waiting. Regression tests reproduced both failures before the fix.
+- Expired creator rooms disable Start and invite actions and offer Create New Room
+  in the existing layout. Replacement creation preserves the chosen settings.
+  Returning Home with browser Back leaves the previous room; Forward gives clean
+  recovery if it has ended. State requests wait for membership on join routes.
+- Start, rematch, and answer handlers have synchronous duplicate-action guards.
+  Failed preparation restores the previous server phase, including finished
+  results, and informs the room. Reconnect during preparation keeps that phase.
+- Lobby invite links support copying with manual-copy feedback when clipboard
+  access fails. QR generation runs locally in a separately loaded component using
+  [node-qrcode](https://github.com/soldair/node-qrcode); it never sends the invite
+  to an external QR service. A separate macOS Vision decoder verified the exact
+  generated join URL from a browser screenshot.
+- Ready status is owned by each player, broadcast to the room, and reset for the
+  next match. It is advisory: the host retains control over starting. Results
+  include a host-only Rematch action that reuses server-stored settings, gets
+  another consumable question batch, and resets answers and scores.
+- A five-second delayed rematch left results visible, showed preparation feedback,
+  and disabled repeated actions. Two browser players completed a match/rematch;
+  refreshing recovered the active question and scores.
+
+The lobby, question, and results views had no horizontal overflow at a real
+390-pixel iframe viewport. A temporary local harness observed browser
+[Event Timing](https://www.w3.org/TR/event-timing/) entries for timer toggling,
+QR opening, answer selection and rematch: approximately 32–48 ms through the next
+paint, rounded by the browser. These are local development samples on this
+computer, not production mobile INP percentiles or a cold-start measurement.
+No blanket memoization or additional caching was justified by this check.
+The temporary harness was removed before deployment.
+
+Verification: 31 tests / 123 assertions cover existing auth, solo, cache and
+multiplayer behavior plus readiness ownership, duplicate starts, non-host rematch
+rejection, failed preparation, clean expired-room recovery and fresh rematch
+scores/settings. Production dependency audit reports zero advisories. Full React
+Doctor remains 100/100 with zero diagnostics; build, lint and type checks pass.
 
 ## Follow-up priorities
 

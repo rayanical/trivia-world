@@ -5,7 +5,7 @@ import { useAlert } from '@/context/AlertContext';
 import { socket } from '@/lib/socket';
 import { requestLobby } from '@/lib/lobby-request';
 import { useAuth } from '@/context/AuthContext';
-type PlayerView = { id?: string; name: string; score?: number; answered?: boolean; avatar?: string | null };
+type PlayerView = { id?: string; name: string; score?: number; answered?: boolean; avatar?: string | null; ready?: boolean; disconnected?: boolean };
 
 type Question = {
     index?: number;
@@ -26,6 +26,9 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
     const [players, setPlayers] = useState<PlayerView[]>([]);
     const [joined, setJoined] = useState(false);
     const [guestName, setGuestName] = useState('');
+    const [roomError, setRoomError] = useState<string | null>(null);
+    const startRequest = useRef(false);
+    const answerRequest = useRef<number | null>(null);
 
     useEffect(() => {
         setJoined(sessionStorage.getItem('joinedLobby') === gameCode);
@@ -115,9 +118,12 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
     useEffect(() => {
         const onUpdate = (list: PlayerView[]) => {
             setPlayers(list);
-            if (list.some(p => p.id === socket.id)) setJoined(true);
+            if (list.some(p => p.id === socket.id)) { setJoined(true); setRoomError(null); }
         };
         const onQuestion = (q: Question) => {
+            startRequest.current = false;
+            answerRequest.current = null;
+            setStarting(false);
             if (recoveryTimerRef.current) {
                 window.clearTimeout(recoveryTimerRef.current);
                 recoveryTimerRef.current = null;
@@ -135,19 +141,21 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
             setCurrentQuestion(q);
             setTimeLeft(q.endTime ? Math.max(0, Math.ceil((q.endTime - Date.now()) / 1000)) : 0);
         };
-        const onState = (payload: { players?: PlayerView[]; question?: Question; timeLeft?: number; myAnswer?: string; phase?: string; settings?: { category?: string; difficulty?: string; amount: number; timeLimit: number | null } }) => {
+        const onState = (payload: { players?: PlayerView[]; question?: Question; timeLeft?: number; myAnswer?: string; phase?: string; loadingFrom?: string; settings?: { category?: string; difficulty?: string; amount: number; timeLimit: number | null } }) => {
             if (payload.players) onUpdate(payload.players);
-            if (payload.phase) setStarting(payload.phase === 'loading');
+            if (payload.phase) { setStarting(payload.phase === 'loading'); startRequest.current = payload.phase === 'loading'; }
             if (payload.phase !== 'reveal' && revealTimerRef.current) {
                 window.clearInterval(revealTimerRef.current);
                 revealTimerRef.current = null;
             }
-            if (payload.settings && ['loading', 'question', 'reveal'].includes(payload.phase || '')) {
+            if (payload.settings && ['loading', 'question', 'reveal', 'finished'].includes(payload.phase || '')) {
                 setCategory(payload.settings.category || ''); setDifficulty(payload.settings.difficulty || '');
                 setAmount(String(payload.settings.amount)); setIsTimeLimitEnabled(payload.settings.timeLimit !== null);
                 setTimeLimit(String(payload.settings.timeLimit || 15));
             }
-            if (payload.phase === 'lobby' || payload.phase === 'loading') { setInGame(false); setShowGameOver(false); setCurrentQuestion(null); }
+            if (payload.phase === 'lobby' || payload.phase === 'loading') {
+                setInGame(false); setShowGameOver(payload.phase === 'loading' && payload.loadingFrom === 'finished'); setCurrentQuestion(null);
+            }
             if (payload.question) {
                 if (recoveryTimerRef.current) {
                     window.clearTimeout(recoveryTimerRef.current);
@@ -161,6 +169,7 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
                 setCurrentQuestion(payload.question);
                 setTimeLeft(payload.question.endTime ? Math.max(0, Math.ceil((payload.question.endTime - Date.now()) / 1000)) : 0);
                 setSelectedAnswer(payload.myAnswer ?? null);
+                answerRequest.current = payload.myAnswer ? payload.question.index ?? null : null;
             }
         };
         const onQuestionEnded = async (payload: { players?: PlayerView[]; correctAnswer?: string; transitionEnd?: number }) => {
@@ -253,16 +262,19 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
 
         };
 
-        const onError = (message: string) => { setStarting(false); showAlert(message, 'error'); };
+        const onError = (message: string) => { startRequest.current = false; setStarting(false); showAlert(message, 'error'); };
         const onJoinError = (message: string) => {
-            setJoined(false); sessionStorage.removeItem('joinedLobby');
-            if (!joinRequest.current) showAlert(message, 'error');
+            setJoined(false); setRoomError(message); setPlayers([]);
+            setInGame(false); setShowGameOver(false); setStarting(false); startRequest.current = false;
+            if (sessionStorage.getItem('joinedLobby') === gameCode) sessionStorage.removeItem('joinedLobby');
         };
-        const onStarted = () => setStarting(false);
+        const onPreparing = () => { startRequest.current = true; setStarting(true); };
+        const onStarted = () => { startRequest.current = false; setStarting(false); };
         const onConnectionError = (error: Error) => { if (gameCode) showAlert(error.message, 'error'); };
         socket.on('start-error', onError);
         socket.on('join-error', onJoinError);
         socket.on('game-started', onStarted);
+        socket.on('game-preparing', onPreparing);
         socket.on('stats-error', onError);
         socket.on('connect_error', onConnectionError);
         socket.on('update-players', onUpdate);
@@ -276,6 +288,7 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
             socket.off('start-error', onError);
             socket.off('join-error', onJoinError);
             socket.off('game-started', onStarted);
+            socket.off('game-preparing', onPreparing);
             socket.off('stats-error', onError);
             socket.off('connect_error', onConnectionError);
             socket.off('update-players', onUpdate);
@@ -298,17 +311,17 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
 
     useEffect(() => {
         const handleVisibilityChange = () => {
-            if (!document.hidden && gameCode && socket.connected && !isTransitioning) {
+            if (!document.hidden && joined && gameCode && socket.connected && !isTransitioning) {
                 socket.emit('get-state', gameCode);
             }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [gameCode, isTransitioning]);
+    }, [gameCode, joined, isTransitioning]);
 
     useEffect(() => {
-        if (gameCode && multiplayerConnected) socket.emit('get-state', gameCode);
-    }, [gameCode, multiplayerConnected]);
+        if (gameCode && multiplayerConnected && (joined || creator)) socket.emit('get-state', gameCode);
+    }, [gameCode, multiplayerConnected, joined, creator]);
 
     useEffect(() => {
         if (isRevealPhase) return;
@@ -348,13 +361,14 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
      * Applies selected category, difficulty, and time limit options.
      */
     const handleStart = () => {
-        if (!isHost || !gameCode || starting || !requireServer(true)) return;
+        if (!isHost || !gameCode || roomError || startRequest.current || !requireServer(true)) return;
         const count = /^\d+$/.test(amount) ? Number(amount) : 0;
         const seconds = /^\d+$/.test(timeLimit) ? Number(timeLimit) : 0;
         if (count < 1 || count > 50 || (isTimeLimitEnabled && (seconds < 5 || seconds > 120))) {
             showAlert('Choose 1–50 questions and a time limit of 5–120 seconds.');
             return;
         }
+        startRequest.current = true;
         setStarting(true);
         const settings = {
             category: category || undefined,
@@ -372,7 +386,8 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
      */
     const handleSubmitAnswer = (answer: string) => {
         if (!gameCode || currentQuestion?.index == null || (currentQuestion?.timeLimit && timeLeft <= 0)) return;
-        if (selectedAnswer || !requireServer(true)) return;
+        if (selectedAnswer || answerRequest.current === currentQuestion.index || !requireServer(true)) return;
+        answerRequest.current = currentQuestion.index;
         setSelectedAnswer(answer);
         socket.emit('submit-answer', { gameCode, answer, questionIndex: currentQuestion.index });
     };
@@ -386,9 +401,23 @@ export function useLobbyGame(overrideCode?: string, creator = false) {
         router.push('/');
     };
 
+    const handleRematch = () => {
+        if (!isHost || !gameCode || roomError || startRequest.current || !requireServer(true)) return;
+        startRequest.current = true;
+        setStarting(true);
+        socket.emit('rematch-game', { gameCode });
+    };
+    const setReady = (ready: boolean) => {
+        if (!gameCode || roomError || starting || !requireServer(true)) return;
+        setPlayers(current => current.map(player => player.id === socket.id ? { ...player, ready } : player));
+        socket.emit('set-ready', { gameCode, ready });
+    };
+    const resetRoom = () => {
+        setRoomError(null); setJoined(false); setPlayers([]);
+    };
     const handleStayInLobby = () => {
         setShowGameOver(false);
     };
 
-    return { router, gameCode, players, joined, guestName, setGuestName, joining, isAuthModalOpen, setIsAuthModalOpen, user, profile, multiplayerConnected, category, setCategory, difficulty, setDifficulty, amount, setAmount, isTimeLimitEnabled, setIsTimeLimitEnabled, timeLimit, setTimeLimit, inGame, currentQuestion, timeLeft, isRevealPhase, selectedAnswer, revealedAnswer, everyoneAnswered, showGameOver, winners, starting, maxPlayers, joinLobby, isHost, handleStart, handleSubmitAnswer, handleLeave, handleStayInLobby };
+    return { router, gameCode, roomError, resetRoom, setReady, handleRematch, players, joined, guestName, setGuestName, joining, isAuthModalOpen, setIsAuthModalOpen, user, profile, multiplayerConnected, category, setCategory, difficulty, setDifficulty, amount, setAmount, isTimeLimitEnabled, setIsTimeLimitEnabled, timeLimit, setTimeLimit, inGame, currentQuestion, timeLeft, isRevealPhase, selectedAnswer, revealedAnswer, everyoneAnswered, showGameOver, winners, starting, maxPlayers, joinLobby, isHost, handleStart, handleSubmitAnswer, handleLeave, handleStayInLobby };
 }

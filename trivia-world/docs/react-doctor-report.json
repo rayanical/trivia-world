@@ -70,7 +70,7 @@
         "hasShadcnUi": false,
         "isPreES2023Target": true,
         "isStaticExport": false,
-        "sourceFileCount": 66
+        "sourceFileCount": 69
       },
       "diagnostics": [],
       "score": {
@@ -93,6 +93,9 @@
         "src/app/components/CustomSelect.tsx",
         "src/app/components/Footer.tsx",
         "src/app/components/Icon.tsx",
+        "src/app/components/LobbyInvite.tsx",
+        "src/app/components/LobbyPlayers.tsx",
+        "src/app/components/LobbyQrCode.tsx",
         "src/app/components/LobbySettings.tsx",
         "src/app/components/LobbyView.tsx",
         "src/app/components/PasswordValidator.tsx",
@@ -147,10 +150,10 @@
         "tests/question-pool.test.ts",
         "tests/solo-buffer.test.ts"
       ],
-      "analyzedFileCount": 66,
+      "analyzedFileCount": 69,
       "complete": true,
-      "scannedFileCount": 66,
-      "elapsedMilliseconds": 1215.251083
+      "scannedFileCount": 69,
+      "elapsedMilliseconds": 1561.48475
     }
   ],
   "diagnostics": [],
@@ -162,6 +165,6 @@
     "score": 100,
     "scoreLabel": "Great"
   },
-  "elapsedMilliseconds": 1312.341,
+  "elapsedMilliseconds": 1724.7137909999997,
   "error": null
 }

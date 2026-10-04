@@ -19,6 +19,7 @@ interface Player {
     name: string;
     avatar: string | null;
     score: number;
+    ready: boolean;
     lastAnswer?: string;
     disconnected?: boolean;
     removalTimer?: ReturnType<typeof setTimeout>;
@@ -32,6 +33,7 @@ interface Game {
     questions?: Question[];
     index: number;
     phase: 'lobby' | 'loading' | 'question' | 'reveal' | 'finished';
+    loadingFrom?: 'lobby' | 'finished';
     answers: string[];
     endAt: number | null;
     correctAnswer?: string;
@@ -70,7 +72,7 @@ const io = new Server(server, {
     maxHttpBufferSize: 16_384,
 });
 const games = new Map<string, Game>();
-const publicPlayers = (game: Game) => game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar, answered: Boolean(p.lastAnswer), disconnected: Boolean(p.disconnected) }));
+const publicPlayers = (game: Game) => game.players.map((p) => ({ id: p.id, name: p.name, score: p.score, avatar: p.avatar, answered: Boolean(p.lastAnswer), disconnected: Boolean(p.disconnected), ready: p.ready }));
 const pendingStats = new Set<Promise<void>>();
 
 function persist(game: Game, write: () => Promise<void>) {
@@ -110,6 +112,7 @@ function sendQuestion(code: string, game: Game) {
     const question = game.questions?.[game.index];
     if (!question) {
         game.phase = 'finished';
+        for (const player of game.players) player.ready = false;
         game.endAt = null;
         const max = Math.max(...game.players.map((p) => p.score));
         for (const player of game.players) if (player.userId) {
@@ -171,6 +174,7 @@ io.use(async (socket, next) => {
 function restorePlayer(socket: Socket, game: Game, code: string) {
     const player = game.players.find((p) => p.key === socket.data.key);
     if (!player) return;
+    const restored = player.id !== socket.id || player.disconnected;
     if (player.id !== socket.id) {
         const oldSocket = io.sockets.sockets.get(player.id);
         if (oldSocket) { oldSocket.leave(code); oldSocket.emit('join-error', 'Your player joined from another connection.'); }
@@ -180,6 +184,7 @@ function restorePlayer(socket: Socket, game: Game, code: string) {
     clearTimeout(player.removalTimer);
     player.disconnected = false;
     socket.join(code);
+    if (restored) broadcast(code, game);
     return player;
 }
 
@@ -194,7 +199,7 @@ io.on('connection', (socket) => {
         const user = socket.data.user;
         const name = user?.name || (payload && typeof payload === 'object' && 'name' in payload && typeof payload.name === 'string' ? payload.name.trim() : '');
         if (!name || name.length > 100) return null;
-        return { id: socket.id, key: socket.data.key, userId: user?.id, name: name.slice(0, 15), avatar: user?.image || null, score: 0 };
+        return { id: socket.id, key: socket.data.key, userId: user?.id, name: name.slice(0, 15), avatar: user?.image || null, score: 0, ready: false };
     };
     socket.on('create-game', (payload: unknown) => {
         if (!socket.connected) return;
@@ -204,6 +209,7 @@ io.on('connection', (socket) => {
         if ([...games.values()].filter((g) => g.players.some((p) => p.key === player.key)).length >= 3 || games.size >= 1000) return socket.emit('join-error', 'Too many active lobbies. Leave an existing lobby first.');
         let code: string;
         do { code = randomUUID().replaceAll('-', '').slice(0, 5).toUpperCase(); } while (games.has(code));
+        player.ready = true;
         const game: Game = { id: randomUUID(), players: [player], host: socket.id, index: 0, phase: 'lobby', answers: [], endAt: null };
         games.set(code, game);
         socket.join(code);
@@ -234,21 +240,34 @@ io.on('connection', (socket) => {
         const game = typeof code === 'string' ? games.get(code) : undefined;
         if (!game) return socket.emit('join-error', 'Game not found.');
         const player = restorePlayer(socket, game, code);
-        if (!player) return;
-        socket.emit('state', { phase: game.phase, host: game.host, settings: game.settings, players: publicPlayers(game), question: ['question', 'reveal'].includes(game.phase) ? publicQuestion(game) : undefined,
+        if (!player) return socket.emit('join-error', 'Please join this room before continuing.');
+        socket.emit('state', { phase: game.phase, loadingFrom: game.loadingFrom, host: game.host, settings: game.settings, players: publicPlayers(game), question: ['question', 'reveal'].includes(game.phase) ? publicQuestion(game) : undefined,
             timeLeft: game.endAt ? Math.max(0, Math.ceil((game.endAt - Date.now()) / 1000)) : null, myAnswer: player.lastAnswer });
         if (game.phase === 'reveal') socket.emit('question-ended', { correctAnswer: game.correctAnswer, players: publicPlayers(game), transitionEnd: game.transitionEnd });
         if (game.phase === 'finished') socket.emit('game-over', { players: publicPlayers(game) });
     });
-    socket.on('start-game', async (payload) => {
+    socket.on('set-ready', (payload) => {
         const code = payload?.gameCode;
         const game = typeof code === 'string' ? games.get(code) : undefined;
-        if (!game || game.host !== socket.id) return socket.emit('start-error', 'Only the host can start an existing game.');
+        if (!game || !['lobby', 'finished'].includes(game.phase) || typeof payload.ready !== 'boolean') return;
+        const player = game.players.find(p => p.id === socket.id && p.key === socket.data.key);
+        if (!player || player.ready === payload.ready) return;
+        player.ready = payload.ready;
+        broadcast(code, game);
+    });
+    const startGame = async (payload: { gameCode?: string; settings?: Settings }, rematch = false) => {
+        const code = payload?.gameCode;
+        const game = typeof code === 'string' ? games.get(code) : undefined;
+        if (typeof code !== 'string' || !game || game.host !== socket.id) return socket.emit('start-error', 'Only the host can start an existing game.');
         if (!['lobby', 'finished'].includes(game.phase)) return socket.emit('start-error', 'A game is already running.');
-        const settings = payload.settings || {};
+        if (rematch && (game.phase !== 'finished' || !game.settings)) return socket.emit('start-error', 'Finish this game before starting a rematch.');
+        const settings: Partial<Settings> = (rematch ? game.settings : payload.settings) || {};
         const timeLimit = settings.timeLimit === undefined ? 15 : settings.timeLimit;
         if (timeLimit !== null && (!Number.isInteger(timeLimit) || timeLimit < 5 || timeLimit > 120)) return socket.emit('start-error', 'Time limit must be 5–120 seconds.');
+        const previousPhase = game.phase as 'lobby' | 'finished';
+        game.loadingFrom = previousPhase;
         game.phase = 'loading';
+        io.to(code).emit('game-preparing', { rematch: previousPhase === 'finished' });
         try {
             const questions = await fetchQuestions(settings.amount ?? 10, settings.category, settings.difficulty);
             if (games.get(code) !== game) return;
@@ -256,14 +275,19 @@ io.on('connection', (socket) => {
             game.settings = { ...settings, amount: settings.amount ?? 10, timeLimit };
             game.questions = questions;
             game.index = 0;
-            for (const player of game.players) player.score = 0;
+            delete game.loadingFrom;
+            for (const player of game.players) { player.score = 0; player.ready = false; }
             io.to(code).emit('game-started', { settings: game.settings });
             sendQuestion(code, game);
         } catch (error) {
-            game.phase = 'lobby';
-            socket.emit('start-error', error instanceof Error ? error.message : 'Failed to fetch questions.');
+            if (games.get(code) !== game) return;
+            game.phase = previousPhase;
+            delete game.loadingFrom;
+            io.to(code).emit('start-error', error instanceof Error ? error.message : 'Failed to fetch questions.');
         }
-    });
+    };
+    socket.on('start-game', payload => { void startGame(payload); });
+    socket.on('rematch-game', payload => { void startGame(payload, true); });
     socket.on('submit-answer', (payload) => {
         const code = payload?.gameCode;
         const game = typeof code === 'string' ? games.get(code) : undefined;

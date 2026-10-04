@@ -29,6 +29,14 @@ export default function WelcomePage() {
         return () => clearTimeout(timer);
     }, [pendingLobby]);
     const lobbyRequest = useRef<AbortController | null>(null);
+    const navigationStarted = useRef(false);
+    // Returning Home with Back must leave the previous room just like the Home button.
+    useEffect(() => {
+        const code = sessionStorage.getItem('joinedLobby');
+        if (!code) return;
+        sessionStorage.removeItem('joinedLobby');
+        void import('@/lib/socket').then(({ socket }) => { if (socket.connected) socket.emit('leave-game', { gameCode: code }); });
+    }, []);
     useEffect(() => () => { lobbyRequest.current?.abort(); }, []);
 
     const resolvePlayerName = () => {
@@ -48,6 +56,8 @@ export default function WelcomePage() {
         if (!loading) void import('@/lib/solo-buffer').then(({ prefetchSoloQuestions }) => prefetchSoloQuestions(user?.id || 'guest')).catch(() => {});
     };
     const handleMultiplayer = () => {
+        if (navigationStarted.current || lobbyRequest.current) return;
+        navigationStarted.current = true;
         sessionStorage.setItem('playerName', resolvePlayerName());
         router.push('/multiplayer');
     };

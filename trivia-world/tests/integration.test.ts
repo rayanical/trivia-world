@@ -37,9 +37,9 @@ const sockets: Socket[] = [];
 const post = (path: string, body: unknown, sessionCookie = cookie) => fetch(`${base}${path}`, {
     method: 'POST', headers: { Origin: 'http://localhost:3000', 'Content-Type': 'application/json', Cookie: sessionCookie }, body: JSON.stringify(body),
 });
-function event<T>(socket: Socket, name: string): Promise<T> {
+function event<T>(socket: Socket, name: string, timeoutMs = 8000): Promise<T> {
     return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => { socket.off(name, listener); reject(new Error(`Timed out waiting for ${name}`)); }, 8000);
+        const timeout = setTimeout(() => { socket.off(name, listener); reject(new Error(`Timed out waiting for ${name}`)); }, timeoutMs);
         const listener = (data: T) => { clearTimeout(timeout); resolve(data); };
         socket.once(name, listener);
     });
@@ -231,3 +231,99 @@ test('guest joins can retry after rejection and tied scores survive state recove
     expect((await state).phase).toBe('finished');
     host.emit('leave-game', {gameCode: code}); guest.emit('leave-game', {gameCode: code});
 }, 15_000);
+
+
+test('reconnecting a player immediately updates the other players', async () => {
+    const host = await connect({ guestId: randomUUID() });
+    const guestId = randomUUID();
+    const guest = await connect({ guestId });
+    const created = event<string>(host, 'game-created');
+    host.emit('create-game', { name: 'Host' });
+    const code = await created;
+    const joined = event(guest, 'join-success');
+    guest.emit('join-game', { gameCode: code, player: { name: 'Guest' } });
+    await joined;
+    const disconnected = event<{disconnected: boolean}[]>(host, 'update-players');
+    guest.disconnect();
+    expect((await disconnected)[1].disconnected).toBe(true);
+    const restored = await connect({ guestId });
+    const update = event<{id: string; disconnected: boolean}[]>(host, 'update-players', 800);
+    restored.emit('get-state', code);
+    const players = await update;
+    expect(players[1].id).toBe(restored.id!);
+    expect(players[1].disconnected).toBe(false);
+    host.emit('leave-game', { gameCode: code });
+    restored.emit('leave-game', { gameCode: code });
+});
+
+test('state recovery rejects a connection that is not a room member', async () => {
+    const host = await connect({ guestId: randomUUID() });
+    const outsider = await connect({ guestId: randomUUID() });
+    const created = event<string>(host, 'game-created');
+    host.emit('create-game', { name: 'Host' });
+    const code = await created;
+    const rejected = event<string>(outsider, 'join-error', 800);
+    outsider.emit('get-state', code);
+    expect(await rejected).toContain('join');
+    host.emit('leave-game', { gameCode: code });
+});
+
+test('ready status is member-owned and rematch reuses settings with fresh scores', async () => {
+    const host = await connect({ guestId: randomUUID() });
+    const guest = await connect({ guestId: randomUUID() });
+    const created = event<string>(host, 'game-created');
+    host.emit('create-game', { name: 'Host' });
+    const code = await created;
+    const joined = event(guest, 'join-success');
+    guest.emit('join-game', { gameCode: code, player: { name: 'Guest' } });
+    await joined;
+    const ready = event<{name: string; ready: boolean}[]>(host, 'update-players');
+    guest.emit('set-ready', { gameCode: code, ready: true, playerId: host.id });
+    expect((await ready).map(p => p.ready)).toEqual([true, true]);
+    const unready = event<{ready: boolean}[]>(host, 'update-players');
+    guest.emit('set-ready', { gameCode: code, ready: false });
+    expect((await unready).map(p => p.ready)).toEqual([true, false]);
+    // Ready status is advisory; the host can still start immediately.
+    const first = event<{index: number}>(host, 'question');
+    const repeated = event<string>(host, 'start-error');
+    host.emit('start-game', { gameCode: code, settings: { amount: 1, category: 'science', timeLimit: null } });
+    host.emit('start-game', { gameCode: code, settings: { amount: 2, timeLimit: null } });
+    expect(await repeated).toContain('already running');
+    const question = await first;
+    const over = event<{players: {score: number; ready: boolean}[]}>(host, 'game-over');
+    host.emit('submit-answer', { gameCode: code, questionIndex: question.index, answer: '4' });
+    guest.emit('submit-answer', { gameCode: code, questionIndex: question.index, answer: '4' });
+    const result = await over;
+    expect(result.players.map(p => p.score)).toEqual([1, 1]);
+    expect(result.players.map(p => p.ready)).toEqual([false, false]);
+    const unauthorized = event<string>(guest, 'start-error');
+    guest.emit('rematch-game', { gameCode: code });
+    expect(await unauthorized).toContain('Only the host');
+    const invalid = event<string>(host, 'start-error');
+    host.emit('start-game', { gameCode: code, settings: { amount: 0, timeLimit: null } });
+    expect(await invalid).toContain('Question count');
+    const failedState = event<{phase: string}>(host, 'state');
+    host.emit('get-state', code);
+    expect((await failedState).phase).toBe('finished');
+    const next = event<{index: number; timeLimit: number | null}>(host, 'question');
+    host.emit('rematch-game', { gameCode: code, settings: { amount: 50, timeLimit: 120 } });
+    expect(await next).toMatchObject({ index: 0, timeLimit: null });
+    const state = event<{settings: {amount: number; category: string}; players: {score: number}[]; myAnswer?: string}>(host, 'state');
+    host.emit('get-state', code);
+    const restored = await state;
+    expect(restored.settings).toMatchObject({ amount: 1, category: 'science' });
+    expect(restored.players.map(p => p.score)).toEqual([0, 0]);
+    expect(restored.myAnswer).toBeUndefined();
+    host.emit('leave-game', { gameCode: code }); guest.emit('leave-game', { gameCode: code });
+}, 15_000);
+
+test('a room that has ended gives an explicit recovery error', async () => {
+    const host = await connect({ guestId: randomUUID() });
+    const created = event<string>(host, 'game-created');
+    host.emit('create-game', { name: 'Host' });
+    const code = await created;
+    host.emit('leave-game', { gameCode: code });
+    const missing = event<string>(host, 'join-error');
+    host.emit('get-state', code);
+    expect(await missing).toContain('not found');
+});

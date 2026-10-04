@@ -64,6 +64,11 @@ Avatars are decoded, cropped to 256×256 WebP, and stored in Postgres with a
 counts toward Neon usage. Authenticated statistics are updated on the server,
 with duplicate answer/match receipts preventing repeated counts.
 
+Multiplayer lobbies have copyable invite links, an on-demand QR code, and advisory
+ready indicators. The host can rematch from results with the same settings and
+fresh questions. Browser Back to Home leaves the room; expired creator links offer
+replacement creation without losing the settings already chosen.
+
 Render restarts preserve database contents but interrupt active multiplayer
 matches, which are held in memory. Render's free service can sleep; Neon storage
 survives that sleep. Neon's compute may also suspend when idle and resume on demand.
@@ -78,7 +83,7 @@ npm run build
 
 Integration tests exercise verification/sign-in, profiles, avatar decoding,
 password resets, solo batch ownership and scoring, multiplayer statistics,
-join retries, ties, and reconnect recovery. Lobby request tests also verify
+join retries, ties, reconnect recovery, readiness ownership, and rematches. Lobby request tests also verify
 listener cleanup and cancellation.
 They require a **disposable local Postgres database**, reject remote database URLs,
 and mock outgoing emails and the trivia provider. Migrate the test database first,
