@@ -55,7 +55,7 @@ player's own Guess Who secret is sent to them until the round finishes.
 
 ## Getting started
 
-You need **Node.js with npm**, **Bun**, and a **Postgres database**. Use a local
+You need **Node.js 24.22.1 or a newer 24.x patch with npm**, **Bun**, and a **Postgres database**. Use a local
 database or a separate Neon development branch. Resend credentials and a verified
 sender are required for the backend's account email configuration.
 
@@ -65,6 +65,9 @@ cd trivia-world/trivia-world
 npm ci
 cp .env.example .env.local
 ```
+
+If you use nvm, run `nvm install` and `nvm use` in the app directory before
+`npm ci`. The checked-in `.nvmrc` and `.node-version` select the patched runtime.
 
 Fill in `.env.local` using the configuration below. Generate separate random
 values for `BETTER_AUTH_SECRET` and `PROXY_SHARED_SECRET`; for example:
@@ -139,6 +142,12 @@ Run commands below from `trivia-world/`, the app directory inside the repository
 | --- | --- | --- |
 | **Vercel** | `npm run build` | Set project root to `trivia-world`; use the Next.js framework preset. Set `BACKEND_URL` and `NEXT_PUBLIC_SOCKET_URL` to the backend's HTTPS URL. |
 | **Render** | `npm ci` | Set root directory to `trivia-world` and start command to `bun run start:server`. The runtime must provide Bun. Configure the backend variables above. |
+
+Node.js is constrained to `>=24.22.1 <25`, including the
+[October 21 security fixes](https://nodejs.org/en/blog/release/v24.22.1). Vercel
+selects the latest patch in the 24.x line. Render uses `.node-version` unless a
+`NODE_VERSION` environment override is configured; update or remove an older
+override. The game server still runs on Bun.
 
 Configure the backend before deploying the frontend. Set the same
 `PROXY_SHARED_SECRET` on both services and rebuild after changing a

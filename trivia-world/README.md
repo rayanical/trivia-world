@@ -12,12 +12,14 @@ curated card catalogue and private server-managed secrets.
 
 ## Run from this directory
 
-Install Node.js, npm and Bun, prepare a development Postgres database, then:
+Install Node.js 24.22.1 or a newer 24.x patch, npm and Bun, prepare a development Postgres database, then:
 
 ```sh
 npm ci
 cp .env.example .env.local
 ```
+
+If you use nvm, run `nvm install` and `nvm use` before `npm ci`.
 
 Fill in `.env.local` using the [configuration guide](../README.md#configuration),
 then run these commands in separate terminals:
@@ -40,3 +42,9 @@ the backend defaults to port 3001.
 See the [repository README](../README.md) for prerequisites, environment variables,
 deployment, tests and the project map. The [Guess Who guide](docs/guess-who.md)
 documents game rules, card sourcing and artwork credits.
+
+The runtime is selected by `.nvmrc` / `.node-version` and constrained in
+`package.json`. Vercel manages the latest patch in the selected 24.x line. On
+Render, an explicitly configured `NODE_VERSION` overrides the version file; keep
+that override updated or remove it to use `.node-version`. The game backend itself
+runs on Bun.
